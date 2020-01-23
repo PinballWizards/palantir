@@ -1,69 +1,50 @@
 #![no_std]
+
+#[macro_use]
+extern crate bitfield;
+
 pub mod messages;
 
-use messages::{Broadcast, Message, SlaveMessage, UpdateRequest};
-use rs485_transport::{
-    Address, AppData, DataFrame, RawDataFrame, Response, Transport, MASTER_ADDRESS,
-};
-use serde::Serialize;
-use serde_cbor::{de::from_slice_with_scratch, ser::SliceWrite, Serializer};
+use rs485_transport::{Address, Response, Transport, MASTER_ADDRESS};
 
-pub struct Palantir {
-    scratch_appdata: AppData,
-    transport: Transport,
+pub trait Bus {
+    fn send(&mut self, data: &[u16]);
+    fn read(&mut self) -> u16;
 }
 
-impl Palantir {
-    pub fn new(device_address: Address) -> Self {
+pub struct Palantir<B: Bus> {
+    transport: Transport,
+    bus: B,
+}
+
+impl<B: Bus> Palantir<B> {
+    pub fn new(device_address: Address, bus: B) -> Self {
         Palantir {
-            scratch_appdata: AppData::new(),
             transport: match device_address {
                 MASTER_ADDRESS => Transport::new_master(),
                 _ => Transport::new_slave(device_address),
             },
+            bus: bus,
         }
     }
 
-    #[inline]
-    fn deserialize(&mut self, frame: DataFrame) -> Option<SlaveMessage> {
-        self.scratch_appdata.clear();
-        match from_slice_with_scratch::<Broadcast>(&frame.app_data(), &mut self.scratch_appdata) {
-            Ok(bcast) => return Some(SlaveMessage::Broadcast(bcast)),
-            _ => (),
-        };
-
-        self.scratch_appdata.clear();
-        match from_slice_with_scratch::<UpdateRequest>(&frame.app_data(), &mut self.scratch_appdata)
-        {
-            Ok(upreq) => Some(SlaveMessage::UpdateRequest(upreq)),
-            _ => None,
-        }
+    pub fn send<'a, M: messages::Message<'a>>(&mut self, message: M) -> Result<(), ()> {
+        let payload = message.to_payload()?;
+        self.bus.send(&match self.transport.send(&payload) {
+            Ok(data) => data,
+            _ => return Err(()),
+        });
+        Ok(())
     }
 
-    pub fn send<M: Message + Serialize>(&mut self, message: M) -> Result<RawDataFrame, ()> {
-        self.scratch_appdata.clear();
-        let writer = SliceWrite::new(&mut self.scratch_appdata);
-        let mut ser = Serializer::new(writer);
-        match message.serialize(&mut ser) {
-            Err(_) => return Err(()),
-            _ => (),
-        };
-
-        let writer = ser.into_inner();
-        let size = writer.bytes_written();
-        match self.transport.send(&self.scratch_appdata[..size]) {
-            Ok(data) => Ok(data),
-            Err(_) => Err(()),
-        }
-    }
-
-    pub fn poll(&mut self) -> Option<SlaveMessage> {
+    pub fn poll(&mut self) -> Option<messages::ReceivedMessage> {
         let frame = self.transport.parse_data_buffer()?;
-        self.deserialize(frame)
+        Some(messages::ReceivedMessage::new(frame))
     }
 
-    pub fn ingest(&mut self, byte: u16) -> Option<Response> {
-        self.transport.ingest(byte)
+    /// This function must ONLY be called when a bus read will succeed and return valid data.
+    pub fn ingest(&mut self) -> Option<Response> {
+        self.transport.ingest(self.bus.read())
     }
 }
 
