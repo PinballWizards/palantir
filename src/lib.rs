@@ -2,7 +2,9 @@
 pub mod messages;
 
 use messages::{Broadcast, Message, SlaveMessage, UpdateRequest};
-use rs485_transport::{Address, AppData, DataFrame, Response, Transport, MASTER_ADDRESS};
+use rs485_transport::{
+    Address, AppData, DataFrame, RawDataFrame, Response, Transport, MASTER_ADDRESS,
+};
 use serde::Serialize;
 use serde_cbor::{de::from_slice_with_scratch, ser::SliceWrite, Serializer};
 
@@ -38,7 +40,7 @@ impl Palantir {
         }
     }
 
-    pub fn send<M: Message + Serialize>(&mut self, message: M) -> Result<(), ()> {
+    pub fn send<M: Message + Serialize>(&mut self, message: M) -> Result<RawDataFrame, ()> {
         self.scratch_appdata.clear();
         let writer = SliceWrite::new(&mut self.scratch_appdata);
         let mut ser = Serializer::new(writer);
@@ -50,7 +52,7 @@ impl Palantir {
         let writer = ser.into_inner();
         let size = writer.bytes_written();
         match self.transport.send(&self.scratch_appdata[..size]) {
-            Ok(_) => Ok(()),
+            Ok(data) => Ok(data),
             Err(_) => Err(()),
         }
     }
