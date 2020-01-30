@@ -9,7 +9,7 @@ edition = "2018"
 [dependencies]
 bitfield = "~0.13"
 heapless = "~0.5.2"
-rs485-transport = { git = "https://github.com/PinballWizards/rs485-transport.git", branch = "master" }
+palantir-transport = { path = "../palantir-transport" }
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

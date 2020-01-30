@@ -5,7 +5,7 @@ extern crate bitfield;
 
 pub mod messages;
 
-use rs485_transport::{Address, Response, Transport, MASTER_ADDRESS};
+use palantir_transport::{Address, Response, Transport, MASTER_ADDRESS};
 
 pub trait Bus {
     fn send(&mut self, data: &[u16]);

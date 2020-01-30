@@ -1,6 +1,6 @@
 use core::convert::{TryFrom, TryInto};
 use heapless::{consts::*, Vec};
-use rs485_transport::DataFrame;
+use palantir_transport::DataFrame;
 
 // Increase this as necessary for new payload types, should be as small as possible
 // to save stack space.

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "palantir",
+    "palantir-transport",
     "master",
     "slave",
 ]
