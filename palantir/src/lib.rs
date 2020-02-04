@@ -3,6 +3,8 @@
 #[macro_use]
 extern crate bitfield;
 
+#[cfg(feature = "feather_bus")]
+pub mod feather_bus;
 pub mod messages;
 
 mod parser;
@@ -29,6 +31,8 @@ pub enum Error {
     NotMaster,
     SendToSelf,
     InvalidDiscoveryAck,
+    /// Slave received a different message when it was anticipating a discovery request.
+    InvalidDiscoveryReq,
     Other,
 }
 
@@ -79,12 +83,33 @@ impl<B: Bus> Palantir<B> {
         }
     }
 
+    fn wait_for_discovery_request(&mut self) -> Result<(), Error> {
+        let msg = loop {
+            self.ingest();
+            match self.poll() {
+                Some(m) => break m,
+                _ => (),
+            }
+        };
+
+        match msg {
+            ReceivedMessage::DiscoveryRequest(_, _) => self.send(MASTER_ADDRESS, DiscoveryAck),
+            _ => Err(Error::InvalidDiscoveryReq),
+        }
+    }
+
+    /// This should only be called by the master device at startup!
     pub fn discover_devices(&mut self) -> Result<(), Error> {
         for address in self.slaves.clone().iter() {
             self.send(*address, DiscoveryAck)?;
             self.wait_for_discovery_ack(*address)?;
         }
         Ok(())
+    }
+
+    /// This should be called only by slave devices at startup.
+    pub fn discovery_mode(&mut self) -> Result<(), Error> {
+        self.wait_for_discovery_request()
     }
 
     pub fn send<M: Message>(&mut self, address: Address, message: M) -> Result<(), Error> {

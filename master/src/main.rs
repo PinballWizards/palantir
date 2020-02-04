@@ -7,9 +7,7 @@ use feather_m0 as hal;
 use rtfm;
 
 use hal::{clock::GenericClockController, pac::Peripherals};
-use palantir::{Palantir, SlaveAddresses};
-
-mod bus;
+use palantir::{feather_bus as bus, Palantir, SlaveAddresses};
 
 use bus::UartBus;
 

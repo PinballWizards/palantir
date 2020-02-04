@@ -32,6 +32,7 @@ impl TryFrom<u8> for MessageID {
     }
 }
 
+/// The `Address` variant is the SENDER address.
 pub enum ReceivedMessage {
     Broadcast(Address, Broadcast),
     DiscoveryRequest(Address, DiscoveryRequest),

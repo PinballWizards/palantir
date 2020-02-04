@@ -1,3 +1,4 @@
+use crate::Bus;
 use embedded_hal::{
     blocking::serial::{write::Default, Write},
     serial,
@@ -11,7 +12,6 @@ use hal::{
     sercom::{PadPin, RxpoTxpo, Sercom0Pad2, Sercom0Pad3, UART0Padout},
     time::Hertz,
 };
-use palantir::Bus;
 
 type Padout = UART0Padout<Sercom0Pad3<Pa11<PfC>>, Sercom0Pad2<Pa10<PfC>>, (), ()>;
 
