@@ -1,9 +1,7 @@
-use crate::transport::DataFrame;
-use core::convert::{TryFrom, TryInto};
+use core::convert::TryFrom;
 use heapless::Vec;
-use nom::number::complete::le_u32;
 
-use crate::transport::AppData;
+use crate::transport::{Address, AppData};
 
 pub trait Message: for<'a> TryFrom<&'a [u8]> {
     const ID: MessageID;
@@ -35,11 +33,11 @@ impl TryFrom<u8> for MessageID {
 }
 
 pub enum ReceivedMessage {
-    Broadcast(Broadcast),
-    DiscoveryRequest(DiscoveryRequest),
-    DiscoveryAck(DiscoveryAck),
-    UpdateRequest(UpdateRequest),
-    SolenoidUpdate(SolenoidUpdate),
+    Broadcast(Address, Broadcast),
+    DiscoveryRequest(Address, DiscoveryRequest),
+    DiscoveryAck(Address, DiscoveryAck),
+    UpdateRequest(Address, UpdateRequest),
+    SolenoidUpdate(Address, SolenoidUpdate),
     Error,
 }
 
@@ -96,7 +94,7 @@ impl Message for DiscoveryRequest {
 impl TryFrom<&[u8]> for DiscoveryRequest {
     type Error = ();
 
-    fn try_from(r: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(_: &[u8]) -> Result<Self, Self::Error> {
         Ok(DiscoveryRequest)
     }
 }

@@ -47,6 +47,10 @@ impl DataFrame {
         &self.data
     }
 
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
     fn to_bytes(self) -> RawDataFrame {
         let mut ret: RawDataFrame = Vec::new();
         // Pack address
@@ -193,10 +197,10 @@ impl Transport {
         }
     }
 
-    pub fn send(&self, app_data: AppData) -> Result<RawDataFrame, usize> {
+    pub fn send(&self, address: Address, app_data: AppData) -> Result<RawDataFrame, usize> {
         match app_data.len().cmp(&MAX_APPDATA_LEN) {
             Ordering::Greater | Ordering::Equal => Err(app_data.len()),
-            _ => Ok(DataFrame::new(self.address, app_data).to_bytes()),
+            _ => Ok(DataFrame::new(address, app_data).to_bytes()),
         }
     }
 }

@@ -8,18 +8,30 @@ pub mod messages;
 mod parser;
 mod transport;
 
-use core::convert::TryFrom;
 use messages::*;
-use nom::number::complete::le_u8;
 use transport::{Address, Response, Transport, MASTER_ADDRESS};
+
+use core::convert::TryFrom;
+use heapless::{consts::*, Vec};
+use nom::number::complete::le_u8;
 
 pub trait Bus {
     fn send(&mut self, data: &[u16]);
     fn read(&mut self) -> u16;
 }
 
+pub enum Error {
+    NotMaster,
+    SendToSelf,
+    InvalidDiscoveryAck,
+    Other,
+}
+
+pub type SlaveAddresses = Vec<Address, U7>;
+
 pub struct Palantir<B: Bus> {
     transport: Transport,
+    address: Address,
     bus: B,
 }
 
@@ -30,15 +42,51 @@ impl<B: Bus> Palantir<B> {
                 MASTER_ADDRESS => Transport::new_master(),
                 _ => Transport::new_slave(device_address),
             },
+            address: device_address,
             bus: bus,
         }
     }
 
-    pub fn send<M: Message>(&mut self, message: M) -> Result<(), ()> {
-        let payload = message.to_payload()?;
-        self.bus.send(&match self.transport.send(payload) {
+    fn wait_for_discovery_ack(&mut self, address: Address) -> Result<(), Error> {
+        let msg = loop {
+            match self.poll() {
+                Some(m) => break m,
+                _ => (),
+            }
+        };
+
+        match msg {
+            ReceivedMessage::DiscoveryAck(addr, _) => {
+                if addr == address {
+                    Ok(())
+                } else {
+                    Err(Error::InvalidDiscoveryAck)
+                }
+            }
+            _ => Err(Error::InvalidDiscoveryAck),
+        }
+    }
+
+    pub fn discover_devices(&mut self, addresses: &SlaveAddresses) -> Result<(), Error> {
+        for address in addresses.iter() {
+            self.send(*address, DiscoveryAck)?;
+            self.wait_for_discovery_ack(*address)?;
+        }
+        Ok(())
+    }
+
+    pub fn send<M: Message>(&mut self, address: Address, message: M) -> Result<(), Error> {
+        if address == self.address {
+            return Err(Error::SendToSelf);
+        }
+
+        let payload = match message.to_payload() {
+            Ok(v) => v,
+            Err(_) => return Err(Error::Other),
+        };
+        self.bus.send(&match self.transport.send(address, payload) {
             Ok(data) => data,
-            _ => return Err(()),
+            _ => return Err(Error::Other),
         });
         Ok(())
     }
@@ -58,23 +106,23 @@ impl<B: Bus> Palantir<B> {
 
         match id {
             MessageID::Broadcast => match Broadcast::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::Broadcast(msg)),
+                Ok(msg) => Some(ReceivedMessage::Broadcast(frame.address(), msg)),
                 _ => None,
             },
             MessageID::DiscoveryRequest => match DiscoveryRequest::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::DiscoveryRequest(msg)),
+                Ok(msg) => Some(ReceivedMessage::DiscoveryRequest(frame.address(), msg)),
                 _ => None,
             },
             MessageID::DiscoveryAck => match DiscoveryAck::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::DiscoveryAck(msg)),
+                Ok(msg) => Some(ReceivedMessage::DiscoveryAck(frame.address(), msg)),
                 _ => None,
             },
             MessageID::UpdateRequest => match UpdateRequest::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::UpdateRequest(msg)),
+                Ok(msg) => Some(ReceivedMessage::UpdateRequest(frame.address(), msg)),
                 _ => None,
             },
             MessageID::SolenoidUpdate => match SolenoidUpdate::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::SolenoidUpdate(msg)),
+                Ok(msg) => Some(ReceivedMessage::SolenoidUpdate(frame.address(), msg)),
                 _ => None,
             },
         }
