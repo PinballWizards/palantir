@@ -16,24 +16,12 @@ fn parse_datalength(i: &[u8]) -> IResult<&[u8], u8> {
     le_u8(i)
 }
 
-/// Helper method for Transport::ingest() to quickly determine data payload length
-/// from front end of buffer.
-pub fn parse_only_datalength(i: &[u8]) -> IResult<&[u8], u8> {
-    let (input, (_, data_len)) = tuple((parse_address, parse_datalength))(i)?;
-    Ok((input, data_len))
-}
-
 fn parse_app_data(i: &[u8]) -> IResult<&[u8], &[u8]> {
     length_data(parse_datalength)(i)
 }
 
 fn parse_crc(i: &[u8]) -> IResult<&[u8], u16> {
     le_u16(i)
-}
-
-pub fn parse_only_crc(i: &[u8]) -> IResult<&[u8], u16> {
-    let (input, (_, _, crcval)) = tuple((parse_address, parse_app_data, parse_crc))(i)?;
-    Ok((input, crcval))
 }
 
 /// Parses a complete data frame from a u8 slice.

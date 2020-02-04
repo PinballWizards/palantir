@@ -1,6 +1,6 @@
 use crate::transport::DataFrame;
 use core::convert::{TryFrom, TryInto};
-use heapless::{consts::*, Vec};
+use heapless::Vec;
 
 use crate::transport::AppData;
 
