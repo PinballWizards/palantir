@@ -2,6 +2,7 @@ use embedded_hal::{
     blocking::serial::{write::Default, Write},
     serial,
 };
+use feather_m0 as hal;
 use hal::{
     clock::{GenericClockController, Sercom0CoreClock},
     gpio::{Floating, Input, Pa10, Pa11, PfC, Port},

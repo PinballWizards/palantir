@@ -1,13 +1,10 @@
 #![no_std]
 #![no_main]
 
-extern crate cortex_m;
-extern crate cortex_m_semihosting;
-extern crate feather_m0 as hal;
 extern crate panic_halt;
-extern crate rtfm;
-#[macro_use]
-extern crate nb;
+
+use feather_m0 as hal;
+use rtfm;
 
 use hal::{clock::GenericClockController, pac::Peripherals};
 use palantir::{Palantir, SlaveAddresses};
