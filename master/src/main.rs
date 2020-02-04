@@ -6,17 +6,23 @@ extern crate panic_halt;
 use feather_m0 as hal;
 use rtfm;
 
-use hal::{clock::GenericClockController, pac::Peripherals};
+use hal::{
+    clock::GenericClockController,
+    gpio::{Output, Pa5, PushPull},
+    pac::Peripherals,
+};
 use palantir::{feather_bus as bus, Palantir, SlaveAddresses};
 
 use bus::UartBus;
 
 const SLAVES: [u8; 1] = [0x1];
 
+type ReceiveEnablePin = Pa5<Output<PushPull>>;
+
 #[rtfm::app(device = hal::pac)]
 const APP: () = {
     struct Resources {
-        palantir: Palantir<UartBus>,
+        palantir: Palantir<UartBus<ReceiveEnablePin>>,
         sercom0: hal::pac::SERCOM0,
     }
     #[init]
@@ -36,6 +42,8 @@ const APP: () = {
             w.error().set_bit()
         });
 
+        let receive_enable = pins.a4.into_push_pull_output(&mut pins.port);
+
         let uart = UartBus::easy_new(
             &mut clocks,
             peripherals.SERCOM0,
@@ -43,6 +51,7 @@ const APP: () = {
             pins.d0,
             pins.d1,
             &mut pins.port,
+            receive_enable,
         );
 
         let mut slaves: SlaveAddresses = SlaveAddresses::new();
