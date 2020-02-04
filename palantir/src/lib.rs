@@ -5,7 +5,10 @@ extern crate bitfield;
 
 pub mod messages;
 
-use palantir_transport::{Address, Response, Transport, MASTER_ADDRESS};
+mod parser;
+mod transport;
+
+use transport::{Address, Response, Transport, MASTER_ADDRESS};
 
 pub trait Bus {
     fn send(&mut self, data: &[u16]);
@@ -30,7 +33,7 @@ impl<B: Bus> Palantir<B> {
 
     pub fn send<'a, M: messages::Message<'a>>(&mut self, message: M) -> Result<(), ()> {
         let payload = message.to_payload()?;
-        self.bus.send(&match self.transport.send(&payload) {
+        self.bus.send(&match self.transport.send(payload) {
             Ok(data) => data,
             _ => return Err(()),
         });

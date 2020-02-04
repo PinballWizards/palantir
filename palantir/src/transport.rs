@@ -1,11 +1,8 @@
-#![cfg_attr(not(test), no_std)]
-
 use heapless::{consts::*, Vec};
 
+use crate::parser;
 use core::cmp::Ordering;
 use crc::crc16;
-
-pub mod parser;
 
 pub type Address = u8;
 
@@ -25,14 +22,21 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
-    fn new(address: Address, app_data: &[u8]) -> Self {
-        let mut ret = DataFrame {
+    pub fn new(address: Address, app_data: AppData) -> Self {
+        let crc = calculate_crc(&app_data);
+        DataFrame {
             address: address,
-            data: Vec::new(),
-            crc: calculate_crc(app_data),
-        };
-        ret.data.extend_from_slice(app_data).unwrap();
-        ret
+            data: app_data,
+            crc: crc,
+        }
+    }
+
+    pub fn new_from_raw(address: Address, app_data: AppData, crc: u16) -> Self {
+        DataFrame {
+            address: address,
+            data: app_data,
+            crc: crc,
+        }
     }
 
     pub fn is_broadcast(&self) -> bool {
@@ -189,7 +193,7 @@ impl Transport {
         }
     }
 
-    pub fn send(&self, app_data: &[u8]) -> Result<RawDataFrame, usize> {
+    pub fn send(&self, app_data: AppData) -> Result<RawDataFrame, usize> {
         match app_data.len().cmp(&MAX_APPDATA_LEN) {
             Ordering::Greater | Ordering::Equal => Err(app_data.len()),
             _ => Ok(DataFrame::new(self.address, app_data).to_bytes()),

@@ -1,15 +1,13 @@
+use crate::transport::DataFrame;
 use core::convert::{TryFrom, TryInto};
 use heapless::{consts::*, Vec};
-use palantir_transport::DataFrame;
 
-// Increase this as necessary for new payload types, should be as small as possible
-// to save stack space.
-pub type MessagePayload = Vec<u8, U32>;
+use crate::transport::AppData;
 
 pub trait Message<'a>: TryFrom<&'a [u8]> {
     const ID: MessageID;
 
-    fn to_payload(&self) -> Result<MessagePayload, ()>;
+    fn to_payload(&self) -> Result<AppData, ()>;
 }
 
 #[repr(u8)]
@@ -36,12 +34,12 @@ impl TryFrom<u8> for MessageID {
 }
 
 pub struct ReceivedMessage {
-    data: MessagePayload,
+    data: AppData,
 }
 
 impl ReceivedMessage {
     pub fn new(frame: DataFrame) -> Self {
-        let mut data: MessagePayload = Vec::new();
+        let mut data: AppData = Vec::new();
         ReceivedMessage {
             data: match data.extend_from_slice(frame.app_data()) {
                 _ => data,
@@ -77,8 +75,8 @@ bitfield! {
 impl<'a> Message<'a> for Broadcast {
     const ID: MessageID = MessageID::Broadcast;
 
-    fn to_payload(&self) -> Result<MessagePayload, ()> {
-        let mut ret: MessagePayload = Vec::new();
+    fn to_payload(&self) -> Result<AppData, ()> {
+        let mut ret: AppData = Vec::new();
         ret.push(Self::ID as u8).unwrap();
         ret.extend_from_slice(&self.0)?;
         Ok(ret)
@@ -111,8 +109,8 @@ pub struct DiscoveryRequest;
 impl<'a> Message<'a> for DiscoveryRequest {
     const ID: MessageID = MessageID::DiscoveryRequest;
 
-    fn to_payload(&self) -> Result<MessagePayload, ()> {
-        let mut ret: MessagePayload = Vec::new();
+    fn to_payload(&self) -> Result<AppData, ()> {
+        let mut ret: AppData = Vec::new();
         ret.push(Self::ID as u8).unwrap();
         Ok(ret)
     }
@@ -138,8 +136,8 @@ pub struct DiscoveryAck;
 impl<'a> Message<'a> for DiscoveryAck {
     const ID: MessageID = MessageID::DiscoveryAck;
 
-    fn to_payload(&self) -> Result<MessagePayload, ()> {
-        let mut ret: MessagePayload = Vec::new();
+    fn to_payload(&self) -> Result<AppData, ()> {
+        let mut ret: AppData = Vec::new();
         ret.push(Self::ID as u8).unwrap();
         Ok(ret)
     }
@@ -167,8 +165,8 @@ bitfield! {
 impl<'a> Message<'a> for UpdateRequest {
     const ID: MessageID = MessageID::UpdateRequest;
 
-    fn to_payload(&self) -> Result<MessagePayload, ()> {
-        let mut ret: MessagePayload = Vec::new();
+    fn to_payload(&self) -> Result<AppData, ()> {
+        let mut ret: AppData = Vec::new();
         ret.push(Self::ID as u8).unwrap();
         ret.extend_from_slice(&self.0.to_le_bytes())?;
         Ok(ret)
@@ -207,8 +205,8 @@ bitfield! {
 impl<'a> Message<'a> for SolenoidUpdate {
     const ID: MessageID = MessageID::SolenoidUpdate;
 
-    fn to_payload(&self) -> Result<MessagePayload, ()> {
-        let mut ret: MessagePayload = Vec::new();
+    fn to_payload(&self) -> Result<AppData, ()> {
+        let mut ret: AppData = Vec::new();
         ret.push(Self::ID as u8).unwrap();
         ret.extend_from_slice(&self.0.to_le_bytes())?;
         Ok(ret)

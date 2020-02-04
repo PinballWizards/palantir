@@ -5,7 +5,7 @@ use nom::{
     IResult,
 };
 
-use crate::DataFrame;
+use crate::transport::DataFrame;
 
 fn parse_address(i: &[u8]) -> IResult<&[u8], u8> {
     let (input, val) = le_u8(i)?;
@@ -41,11 +41,7 @@ pub fn parse_dataframe(i: &[u8]) -> IResult<&[u8], DataFrame> {
     let (input, (addr, data, crcval)) = tuple((parse_address, parse_app_data, parse_crc))(i)?;
     Ok((
         input,
-        DataFrame {
-            address: addr,
-            data: data.iter().cloned().collect(),
-            crc: crcval,
-        },
+        DataFrame::new_from_raw(addr, data.iter().cloned().collect(), crcval),
     ))
 }
 
