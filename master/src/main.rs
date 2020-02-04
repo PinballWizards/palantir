@@ -59,19 +59,13 @@ const APP: () = {
         }
     }
 
-    #[idle(spawn = [testing], resources = [palantir])]
+    #[idle(resources = [palantir])]
     fn idle(cx: idle::Context) -> ! {
-        loop {
-            cx.spawn.testing().unwrap();
-        }
-    }
-
-    #[task(resources = [palantir])]
-    fn testing(cx: testing::Context) {
-        match cx.resources.palantir.poll() {
-            Some(msg) => (),
-            _ => (),
-        };
+        let mut palantir = cx.resources.palantir;
+        palantir.lock(|p| {
+            let _ = p.discover_devices();
+        });
+        loop {}
     }
 
     #[task(binds = SERCOM0, resources = [palantir, sercom0])]

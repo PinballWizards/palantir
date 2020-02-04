@@ -13,13 +13,16 @@ use transport::{Address, Response, Transport, MASTER_ADDRESS};
 
 use core::convert::TryFrom;
 use heapless::{consts::*, Vec};
+use nb;
 use nom::number::complete::le_u8;
 
 pub type SlaveAddresses = Vec<Address, U7>;
 
 pub trait Bus {
+    type Error;
+
     fn send(&mut self, data: &[u16]);
-    fn read(&mut self) -> u16;
+    fn read(&mut self) -> nb::Result<u16, Self::Error>;
 }
 
 pub enum Error {
@@ -57,6 +60,7 @@ impl<B: Bus> Palantir<B> {
 
     fn wait_for_discovery_ack(&mut self, address: Address) -> Result<(), Error> {
         let msg = loop {
+            self.ingest();
             match self.poll() {
                 Some(m) => break m,
                 _ => (),
@@ -136,9 +140,11 @@ impl<B: Bus> Palantir<B> {
         }
     }
 
-    /// This function must ONLY be called when a bus read will succeed and return valid data.
     pub fn ingest(&mut self) -> Option<Response> {
-        self.transport.ingest(self.bus.read())
+        match self.bus.read() {
+            Ok(v) => self.transport.ingest(v),
+            _ => None,
+        }
     }
 }
 

@@ -178,21 +178,22 @@ impl core::fmt::Write for UartBus {
 }
 
 impl Bus for UartBus {
+    type Error = ();
     // Ignore all sorts of errors for now kthx.
     fn send(&mut self, data: &[u16]) {
         for word in data.iter() {
             let _ = self.bwrite_all(&word.to_le_bytes());
         }
     }
-    fn read(&mut self) -> u16 {
+    fn read(&mut self) -> nb::Result<u16, Self::Error> {
         let mut buf = [0u8; 2];
         for v in buf.iter_mut() {
-            match block!(<UartBus as serial::Read<u8>>::read(self)) {
+            match <UartBus as serial::Read<u8>>::read(self) {
                 Ok(data) => *v = data,
-                _ => return 0xffff,
+                Err(e) => return Err(e),
             }
         }
-        u16::from_le_bytes(buf)
+        Ok(u16::from_le_bytes(buf))
     }
 }
 
