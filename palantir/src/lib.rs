@@ -15,6 +15,8 @@ use core::convert::TryFrom;
 use heapless::{consts::*, Vec};
 use nom::number::complete::le_u8;
 
+pub type SlaveAddresses = Vec<Address, U7>;
+
 pub trait Bus {
     fn send(&mut self, data: &[u16]);
     fn read(&mut self) -> u16;
@@ -27,23 +29,29 @@ pub enum Error {
     Other,
 }
 
-pub type SlaveAddresses = Vec<Address, U7>;
-
 pub struct Palantir<B: Bus> {
     transport: Transport,
     address: Address,
     bus: B,
+    slaves: SlaveAddresses,
 }
 
 impl<B: Bus> Palantir<B> {
-    pub fn new(device_address: Address, bus: B) -> Self {
+    pub fn new_slave(device_address: Address, bus: B) -> Self {
         Palantir {
-            transport: match device_address {
-                MASTER_ADDRESS => Transport::new_master(),
-                _ => Transport::new_slave(device_address),
-            },
+            transport: Transport::new_slave(device_address),
             address: device_address,
             bus: bus,
+            slaves: Vec::new(),
+        }
+    }
+
+    pub fn new_master(slaves: SlaveAddresses, bus: B) -> Self {
+        Palantir {
+            transport: Transport::new_master(),
+            address: MASTER_ADDRESS,
+            bus: bus,
+            slaves: slaves,
         }
     }
 
@@ -67,8 +75,8 @@ impl<B: Bus> Palantir<B> {
         }
     }
 
-    pub fn discover_devices(&mut self, addresses: &SlaveAddresses) -> Result<(), Error> {
-        for address in addresses.iter() {
+    pub fn discover_devices(&mut self) -> Result<(), Error> {
+        for address in self.slaves.clone().iter() {
             self.send(*address, DiscoveryAck)?;
             self.wait_for_discovery_ack(*address)?;
         }
