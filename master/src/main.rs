@@ -10,13 +10,13 @@ extern crate rtfm;
 extern crate nb;
 
 use hal::{clock::GenericClockController, pac::Peripherals};
-use palantir::Palantir;
+use palantir::{Palantir, SlaveAddresses};
 
 mod bus;
 
 use bus::UartBus;
 
-const DEVICE_ADDRESS: u8 = 0x1;
+const SLAVES: [u8; 1] = [0x1];
 
 #[rtfm::app(device = hal::pac)]
 const APP: () = {
@@ -50,13 +50,16 @@ const APP: () = {
             &mut pins.port,
         );
 
+        let mut slaves: SlaveAddresses = SlaveAddresses::new();
+        slaves.extend_from_slice(&SLAVES).unwrap();
+
         init::LateResources {
-            palantir: Palantir::new(DEVICE_ADDRESS, uart),
+            palantir: Palantir::new_master(slaves, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
         }
     }
 
-    #[idle(spawn = [testing])]
+    #[idle(spawn = [testing], resources = [palantir])]
     fn idle(cx: idle::Context) -> ! {
         loop {
             cx.spawn.testing().unwrap();
