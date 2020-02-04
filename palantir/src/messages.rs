@@ -1,10 +1,11 @@
 use crate::transport::DataFrame;
 use core::convert::{TryFrom, TryInto};
 use heapless::Vec;
+use nom::number::complete::le_u32;
 
 use crate::transport::AppData;
 
-pub trait Message<'a>: TryFrom<&'a [u8]> {
+pub trait Message: for<'a> TryFrom<&'a [u8]> {
     const ID: MessageID;
 
     fn to_payload(&self) -> Result<AppData, ()>;
@@ -33,37 +34,13 @@ impl TryFrom<u8> for MessageID {
     }
 }
 
-pub struct ReceivedMessage {
-    data: AppData,
-}
-
-impl ReceivedMessage {
-    pub fn new(frame: DataFrame) -> Self {
-        let mut data: AppData = Vec::new();
-        ReceivedMessage {
-            data: match data.extend_from_slice(frame.app_data()) {
-                _ => data,
-            },
-        }
-    }
-
-    pub fn to_discovery_request(&self) -> Option<DiscoveryRequest> {
-        let arr_ref: &[u8] = self.data.as_ref();
-        let res: DiscoveryRequest = match arr_ref.try_into() {
-            Ok(v) => v,
-            _ => return None,
-        };
-        Some(res)
-    }
-
-    pub fn to_discovery_ack(&self) -> Option<DiscoveryAck> {
-        let arr_ref: &[u8] = self.data.as_ref();
-        let res: DiscoveryAck = match arr_ref.try_into() {
-            Ok(v) => v,
-            _ => return None,
-        };
-        Some(res)
-    }
+pub enum ReceivedMessage {
+    Broadcast(Broadcast),
+    DiscoveryRequest(DiscoveryRequest),
+    DiscoveryAck(DiscoveryAck),
+    UpdateRequest(UpdateRequest),
+    SolenoidUpdate(SolenoidUpdate),
+    Error,
 }
 
 bitfield! {
@@ -72,7 +49,7 @@ bitfield! {
     u16;
 }
 
-impl<'a> Message<'a> for Broadcast {
+impl Message for Broadcast {
     const ID: MessageID = MessageID::Broadcast;
 
     fn to_payload(&self) -> Result<AppData, ()> {
@@ -106,7 +83,7 @@ impl<'a> TryFrom<&'a [u8]> for Broadcast {
 
 pub struct DiscoveryRequest;
 
-impl<'a> Message<'a> for DiscoveryRequest {
+impl Message for DiscoveryRequest {
     const ID: MessageID = MessageID::DiscoveryRequest;
 
     fn to_payload(&self) -> Result<AppData, ()> {
@@ -116,24 +93,17 @@ impl<'a> Message<'a> for DiscoveryRequest {
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for DiscoveryRequest {
+impl TryFrom<&[u8]> for DiscoveryRequest {
     type Error = ();
 
-    fn try_from(r: &'a [u8]) -> Result<Self, Self::Error> {
-        if r.len() == 0 {
-            return Err(());
-        }
-
-        match r[0] {
-            x if x == MessageID::DiscoveryRequest as u8 => Ok(DiscoveryRequest),
-            _ => Err(()),
-        }
+    fn try_from(r: &[u8]) -> Result<Self, Self::Error> {
+        Ok(DiscoveryRequest)
     }
 }
 
 pub struct DiscoveryAck;
 
-impl<'a> Message<'a> for DiscoveryAck {
+impl Message for DiscoveryAck {
     const ID: MessageID = MessageID::DiscoveryAck;
 
     fn to_payload(&self) -> Result<AppData, ()> {
@@ -162,7 +132,7 @@ bitfield! {
     pub struct UpdateRequest(u32);
 }
 
-impl<'a> Message<'a> for UpdateRequest {
+impl Message for UpdateRequest {
     const ID: MessageID = MessageID::UpdateRequest;
 
     fn to_payload(&self) -> Result<AppData, ()> {
@@ -202,7 +172,7 @@ bitfield! {
     pub outputs, set_outputs: 18, 12;
 }
 
-impl<'a> Message<'a> for SolenoidUpdate {
+impl Message for SolenoidUpdate {
     const ID: MessageID = MessageID::SolenoidUpdate;
 
     fn to_payload(&self) -> Result<AppData, ()> {

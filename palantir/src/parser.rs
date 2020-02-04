@@ -1,12 +1,10 @@
+use crate::transport::DataFrame;
 use nom::{
     multi::length_data,
     number::streaming::{le_u16, le_u8},
     sequence::tuple,
     IResult,
 };
-
-use crate::transport::DataFrame;
-
 fn parse_address(i: &[u8]) -> IResult<&[u8], u8> {
     let (input, val) = le_u8(i)?;
     Ok((input, val >> 4))
