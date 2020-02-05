@@ -120,8 +120,7 @@ impl Transport {
     }
 
     fn address_match(&self, address: Address) -> bool {
-        (self.address & address == self.address)
-            || (BROADCAST_ADDRESS & address == BROADCAST_ADDRESS)
+        (self.address ^ address == 0) || (BROADCAST_ADDRESS ^ address == 0)
     }
 
     fn parse_address(&self, byte: u16) -> Address {
@@ -223,9 +222,10 @@ mod test {
     #[test]
     fn test_is_address_fail() {
         let t = Transport::new_slave(ADDRESS);
-        let address_byte: u16 = 0;
 
-        assert_eq!(t.is_address_byte(address_byte), false);
+        for address_byte in 2..15 {
+            assert_eq!(t.is_address_byte(address_byte), false);
+        }
     }
 
     #[test]

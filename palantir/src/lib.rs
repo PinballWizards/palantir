@@ -204,6 +204,10 @@ mod tests {
         }
     }
 
+    fn get_mocked_slave(address: Address) -> Palantir<MockBus> {
+        Palantir::new_slave(address, MockBus::new())
+    }
+
     #[test]
     fn echo_bus() {
         let mut bus = MockBus::new();
@@ -212,5 +216,28 @@ mod tests {
             Ok(v) => assert_eq!(v, 5),
             Err(_) => panic!("did not get same value back"),
         }
+    }
+
+    #[test]
+    fn discovery_ack_transmit() {
+        let msg = DiscoveryAck;
+        let slave_addr: Address = 0x2;
+        let mut palantir = get_mocked_slave(slave_addr);
+
+        palantir.send(slave_addr + 1, msg);
+
+        for _ in 0..260 {
+            palantir.ingest();
+        }
+
+        let recv_msg = match palantir.poll() {
+            Some(msg) => msg,
+            None => panic!("did not get sent message"),
+        };
+
+        match recv_msg {
+            ReceivedMessage::DiscoveryRequest(_, _) => (),
+            _ => panic!("did not get discovery request"),
+        };
     }
 }
