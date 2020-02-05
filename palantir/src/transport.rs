@@ -254,4 +254,10 @@ mod test {
             }
         }
     }
+
+    #[test]
+    fn test_dataframe_to_bytes() {
+        let frame = DataFrame::new(0x2, Vec::new());
+        println!()
+    }
 }

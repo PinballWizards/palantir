@@ -71,11 +71,25 @@ const APP: () = {
 
     #[idle(resources = [palantir, delay, sercom0, error_led])]
     fn idle(cx: idle::Context) -> ! {
-        // let mut palantir = cx.resources.palantir;
+        let mut palantir = cx.resources.palantir;
         // match palantir.lock(|p| p.discovery_mode()) {
         //     Ok(_) => cx.resources.status_led.set_high().unwrap(),
         //     Err(_) => cx.resources.error_led.set_high().unwrap(),
         // };
+
+        // loop {
+        //     match palantir.lock(|p| p.poll()) {
+        //         Some(msg) => {
+        //             cx.resources.status_led.set_high().unwrap();
+        //             cx.resources.error_led.set_low().unwrap();
+        //             break;
+        //         },
+        //         None => cx.resources.error_led.set_high().unwrap(),
+        //     }
+        // }
+
+        cx.resources.delay.delay_ms(1000u32);
+
         let mut sercom0 = cx.resources.sercom0;
         loop {
             cx.resources.error_led.set_high().unwrap();
@@ -90,8 +104,8 @@ const APP: () = {
     #[task(binds = SERCOM0, resources = [palantir, sercom0, status_led])]
     fn sercom0(cx: sercom0::Context) {
         let intflag = cx.resources.sercom0.usart_mut().intflag.read();
-        cx.resources.status_led.set_high().unwrap();
         if intflag.rxc().bit_is_set() {
+            cx.resources.status_led.set_high().unwrap();
             cx.resources.palantir.ingest();
         } else if intflag.error().bit_is_set() {
             // Collision error detected, wait for NAK and resend
