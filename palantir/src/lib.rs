@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 #[macro_use]
 extern crate bitfield;
@@ -175,8 +175,42 @@ impl<B: Bus> Palantir<B> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use heapless::spsc::Queue;
+
+    struct MockBus {
+        buf: Queue<u16, U260>,
+    }
+
+    impl MockBus {
+        fn new() -> Self {
+            Self { buf: Queue::new() }
+        }
+    }
+
+    impl Bus for MockBus {
+        type Error = ();
+        fn send(&mut self, data: &[u16]) {
+            for byte in data.iter() {
+                let _ = self.buf.enqueue(*byte);
+            }
+        }
+
+        fn read(&mut self) -> nb::Result<u16, Self::Error> {
+            match self.buf.dequeue() {
+                Some(v) => Ok(v),
+                None => Err(nb::Error::Other(())),
+            }
+        }
+    }
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn echo_bus() {
+        let mut bus = MockBus::new();
+        bus.send(&[5]);
+        match bus.read() {
+            Ok(v) => assert_eq!(v, 5),
+            Err(_) => panic!("did not get same value back"),
+        }
     }
 }

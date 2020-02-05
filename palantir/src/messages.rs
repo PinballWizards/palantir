@@ -206,6 +206,7 @@ impl<'a> TryFrom<&'a [u8]> for SolenoidUpdate {
 #[cfg(test)]
 mod test {
     use super::*;
+    use core::convert::TryInto;
     #[test]
     fn update_request_space_ok() {
         let ureq = UpdateRequest(0);
@@ -214,7 +215,7 @@ mod test {
 
     #[test]
     fn solenoid_update_from_slice() {
-        let data: MessagePayload = SolenoidUpdate(32456).to_payload().unwrap();
+        let data: AppData = SolenoidUpdate(32456).to_payload().unwrap();
         let data_ref: &[u8] = data.as_ref();
         let update: SolenoidUpdate = match data_ref.try_into() {
             Ok(update) => update,

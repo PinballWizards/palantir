@@ -24,3 +24,4 @@ nb = "~0.1"
 
 [features]
 feather_bus = ["feather_m0", "embedded-hal"]
+std = []

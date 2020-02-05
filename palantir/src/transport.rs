@@ -73,7 +73,7 @@ fn calculate_crc(data: &[u8]) -> u16 {
     crc16::checksum_usb(data)
 }
 
-fn crc_valid(data: &[u8], crc_value: &u16) -> Result<u16, u16> {
+pub fn crc_valid(data: &[u8], crc_value: &u16) -> Result<u16, u16> {
     let calculated_crc = calculate_crc(data);
     match calculated_crc.cmp(crc_value) {
         Ordering::Equal => Ok(calculated_crc),
@@ -259,5 +259,56 @@ mod test {
     fn test_dataframe_to_bytes() {
         let frame = DataFrame::new(0x2, Vec::new());
         println!()
+    }
+
+    #[test]
+    fn crc_check() {
+        let data = [0x10u8, 0x1, 0xff, 0x00, 0xff];
+        let frame = parser::parse_dataframe(&data);
+
+        match frame {
+            Ok((_, o)) => {
+                assert_eq!(crc_valid(&o.data, &o.crc).is_ok(), true);
+            }
+            _ => {
+                panic!("failed to parse data frame");
+            }
+        }
+    }
+
+    #[test]
+    fn data_frame_test() {
+        let data = [0x10u8, 0x2, 0xff, 0xfe, 0x12, 0x34];
+        let frame = parser::parse_dataframe(&data);
+
+        match frame {
+            Ok((_, o)) => {
+                println!("parsed data frame!");
+                println!(
+                    "addr: {}\ndata len: {}\ndata: {:x?}\ncrc: {}",
+                    o.address,
+                    o.data.len(),
+                    o.data,
+                    o.crc
+                );
+            }
+            _ => {
+                println!("failed to parse data frame");
+                panic!("could not parse data frame");
+            }
+        }
+    }
+
+    #[test]
+    fn data_frame_fail() {
+        let data = [0x0u8];
+        let frame = parser::parse_dataframe(&data);
+        match frame {
+            Err(e) => println!("test failed successfully: {:?}", e),
+            _ => {
+                println!("test didn't fail");
+                panic!("test should have failed");
+            }
+        }
     }
 }

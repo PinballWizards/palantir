@@ -1,9 +1,5 @@
 use crate::Bus;
-use embedded_hal::{
-    blocking::serial::{write::Default, Write},
-    digital::v2::OutputPin,
-    serial,
-};
+use embedded_hal::{blocking::serial::write::Default, digital::v2::OutputPin, serial};
 use feather_m0 as hal;
 use hal::{
     clock::{GenericClockController, Sercom0CoreClock},
@@ -143,15 +139,11 @@ impl<P: OutputPin> UartBus<P> {
     }
 
     pub fn enable_rxc_interrupt(&self) {
-        self.usart().intenset.write(|w| {
-            w.rxc().set_bit()
-        });
+        self.usart().intenset.write(|w| w.rxc().set_bit());
     }
 
     pub fn enable_error_interrupt(&self) {
-        self.usart().intenset.write(|w| {
-            w.error().set_bit()
-        });
+        self.usart().intenset.write(|w| w.error().set_bit());
     }
 }
 
@@ -229,7 +221,7 @@ where
     }
 }
 
-const SHIFT: u8 = 32;
+const SHIFT: u64 = 32;
 
 fn calculate_baud_value(baudrate: u32, clk_freq: u32, n_samples: u8) -> u16 {
     let sample_rate = (n_samples as u64 * baudrate as u64) << 32;

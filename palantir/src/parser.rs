@@ -39,7 +39,6 @@ pub fn parse_dataframe_noclone(i: &[u8]) -> IResult<&[u8], (u8, &[u8], u16)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crc_valid;
     #[test]
     fn address_test() {
         let data = [0x10u8];
@@ -57,42 +56,6 @@ mod tests {
     }
 
     #[test]
-    fn data_frame_test() {
-        let data = [0x10u8, 0x2, 0xff, 0xfe, 0x12, 0x34];
-        let frame = parse_dataframe(&data);
-
-        match frame {
-            Ok((_, o)) => {
-                println!("parsed data frame!");
-                println!(
-                    "addr: {}\ndata len: {}\ndata: {:x?}\ncrc: {}",
-                    o.address,
-                    o.data.len(),
-                    o.data,
-                    o.crc
-                );
-            }
-            _ => {
-                println!("failed to parse data frame");
-                panic!("could not parse data frame");
-            }
-        }
-    }
-
-    #[test]
-    fn data_frame_fail() {
-        let data = [0x0u8];
-        let frame = parse_dataframe(&data);
-        match frame {
-            Err(e) => println!("test failed successfully: {:?}", e),
-            _ => {
-                println!("test didn't fail");
-                panic!("test should have failed");
-            }
-        }
-    }
-
-    #[test]
     fn parse_crc_check() {
         let val = 0x670fu16;
         match parse_crc(&val.to_le_bytes()) {
@@ -100,21 +63,6 @@ mod tests {
                 assert_eq!(o, val);
             }
             _ => (),
-        }
-    }
-
-    #[test]
-    fn crc_check() {
-        let data = [0x10u8, 0x1, 0xff, 0x00, 0xff];
-        let frame = parse_dataframe(&data);
-
-        match frame {
-            Ok((_, o)) => {
-                assert_eq!(crc_valid(&o.data, &o.crc).is_ok(), true);
-            }
-            _ => {
-                panic!("failed to parse data frame");
-            }
         }
     }
 }
