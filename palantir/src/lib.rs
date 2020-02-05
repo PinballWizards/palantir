@@ -41,6 +41,7 @@ pub struct Palantir<B: Bus> {
     address: Address,
     bus: B,
     slaves: SlaveAddresses,
+    loopback: bool,
 }
 
 impl<B: Bus> Palantir<B> {
@@ -50,6 +51,7 @@ impl<B: Bus> Palantir<B> {
             address: device_address,
             bus: bus,
             slaves: Vec::new(),
+            loopback: false,
         }
     }
 
@@ -59,6 +61,7 @@ impl<B: Bus> Palantir<B> {
             address: MASTER_ADDRESS,
             bus: bus,
             slaves: slaves,
+            loopback: false,
         }
     }
 
@@ -113,7 +116,7 @@ impl<B: Bus> Palantir<B> {
     }
 
     pub fn send<M: Message>(&mut self, address: Address, message: M) -> Result<(), Error> {
-        if address == self.address {
+        if !self.loopback && address == self.address {
             return Err(Error::SendToSelf);
         }
 
@@ -178,6 +181,18 @@ mod tests {
     use super::*;
     use heapless::spsc::Queue;
 
+    impl<B: Bus> Palantir<B> {
+        fn new_loopback(address: Address, bus: B) -> Self {
+            Palantir {
+                transport: Transport::new_slave(address),
+                address,
+                bus,
+                slaves: Vec::new(),
+                loopback: true,
+            }
+        }
+    }
+
     struct MockBus {
         buf: Queue<u16, U260>,
     }
@@ -205,7 +220,7 @@ mod tests {
     }
 
     fn get_mocked_slave(address: Address) -> Palantir<MockBus> {
-        Palantir::new_slave(address, MockBus::new())
+        Palantir::new_loopback(address, MockBus::new())
     }
 
     #[test]
@@ -220,11 +235,11 @@ mod tests {
 
     #[test]
     fn discovery_ack_transmit() {
-        let msg = DiscoveryAck;
+        let msg = DiscoveryRequest;
         let slave_addr: Address = 0x2;
         let mut palantir = get_mocked_slave(slave_addr);
 
-        palantir.send(slave_addr + 1, msg);
+        palantir.send(slave_addr, msg);
 
         for _ in 0..260 {
             palantir.ingest();
@@ -236,7 +251,9 @@ mod tests {
         };
 
         match recv_msg {
-            ReceivedMessage::DiscoveryRequest(_, _) => (),
+            ReceivedMessage::DiscoveryRequest(addr, _) => {
+                println!("got discovery request from addr: {}", addr)
+            }
             _ => panic!("did not get discovery request"),
         };
     }

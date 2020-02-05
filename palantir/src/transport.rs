@@ -168,11 +168,11 @@ impl Transport {
                         Ok((_, (_, data, crc))) => {
                             // Full dataframe has been received, check the crc value and respond
                             // appropriately.
-                            if crc_valid(data, &crc).is_ok() {
-                                return Some(RESPONSE_ACK);
+                            return if crc_valid(data, &crc).is_ok() {
+                                Some(RESPONSE_ACK)
                             } else {
-                                return Some(RESPONSE_NACK);
-                            }
+                                Some(RESPONSE_NACK)
+                            };
                         }
                         _ => (),
                     }
