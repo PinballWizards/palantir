@@ -141,6 +141,18 @@ impl<P: OutputPin> UartBus<P> {
     fn dre(&self) -> bool {
         self.usart().intflag.read().dre().bit_is_set()
     }
+
+    pub fn enable_rxc_interrupt(&self) {
+        self.usart().intenset.write(|w| {
+            w.rxc().set_bit()
+        });
+    }
+
+    pub fn enable_error_interrupt(&self) {
+        self.usart().intenset.write(|w| {
+            w.error().set_bit()
+        });
+    }
 }
 
 impl<P: OutputPin> serial::Write<u8> for UartBus<P> {

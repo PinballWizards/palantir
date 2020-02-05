@@ -8,6 +8,7 @@ use rtfm;
 
 use hal::{
     clock::GenericClockController,
+    delay::Delay,
     gpio::{Output, Pa16, Pa17, Pa5, PushPull},
     pac::Peripherals,
     prelude::*,
@@ -29,9 +30,10 @@ const APP: () = {
         sercom0: hal::pac::SERCOM0,
         error_led: ErrorLEDPin,
         status_led: StatusLEDPin,
+        delay: Delay,
     }
     #[init]
-    fn init(_: init::Context) -> init::LateResources {
+    fn init(cx: init::Context) -> init::LateResources {
         let mut peripherals = Peripherals::take().unwrap();
         let mut clocks = GenericClockController::with_external_32kosc(
             peripherals.GCLK,
@@ -40,12 +42,6 @@ const APP: () = {
             &mut peripherals.NVMCTRL,
         );
         let mut pins = hal::Pins::new(peripherals.PORT);
-
-        // Enable sercom0 receive complete interrupt and error interrupt
-        peripherals.SERCOM0.usart().intenset.write(|w| {
-            w.rxc().set_bit();
-            w.error().set_bit()
-        });
 
         let mut transmit_enable = pins.a4.into_push_pull_output(&mut pins.port);
         transmit_enable.set_low().unwrap();
@@ -60,22 +56,35 @@ const APP: () = {
             transmit_enable,
         );
 
+        // Enable sercom0 receive complete interrupt and error interrupt.
+        // This MUST be done AFTER
+        uart.enable_rxc_interrupt();
+
         init::LateResources {
             palantir: Palantir::new_slave(DEVICE_ADDRESS, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
             status_led: pins.d13.into_push_pull_output(&mut pins.port),
             error_led: pins.d11.into_push_pull_output(&mut pins.port),
+            delay: Delay::new(cx.core.SYST, &mut clocks),
         }
     }
 
-    #[idle(resources = [palantir, status_led, error_led])]
+    #[idle(resources = [palantir, delay, sercom0, error_led])]
     fn idle(cx: idle::Context) -> ! {
         // let mut palantir = cx.resources.palantir;
         // match palantir.lock(|p| p.discovery_mode()) {
         //     Ok(_) => cx.resources.status_led.set_high().unwrap(),
         //     Err(_) => cx.resources.error_led.set_high().unwrap(),
         // };
-        loop {}
+        let mut sercom0 = cx.resources.sercom0;
+        loop {
+            cx.resources.error_led.set_high().unwrap();
+            cx.resources.delay.delay_ms(500u32);
+            if sercom0.lock(|s| s.usart().intenset.read().rxc().bit_is_set()) {
+                cx.resources.error_led.set_low().unwrap();
+                cx.resources.delay.delay_ms(500u32);
+            }
+        }
     }
 
     #[task(binds = SERCOM0, resources = [palantir, sercom0, status_led])]
