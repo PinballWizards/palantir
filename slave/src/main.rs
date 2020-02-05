@@ -47,7 +47,8 @@ const APP: () = {
             w.error().set_bit()
         });
 
-        let receive_enable = pins.a4.into_push_pull_output(&mut pins.port);
+        let mut transmit_enable = pins.a4.into_push_pull_output(&mut pins.port);
+        transmit_enable.set_low().unwrap();
 
         let uart = UartBus::easy_new(
             &mut clocks,
@@ -56,7 +57,7 @@ const APP: () = {
             pins.d0,
             pins.d1,
             &mut pins.port,
-            receive_enable,
+            transmit_enable,
         );
 
         init::LateResources {
@@ -67,21 +68,21 @@ const APP: () = {
         }
     }
 
-    #[idle(resources = [palantir, status_led])]
+    #[idle(resources = [palantir, status_led, error_led])]
     fn idle(cx: idle::Context) -> ! {
-        let mut palantir = cx.resources.palantir;
-        match palantir.lock(|p| p.discovery_mode()) {
-            Ok(_) => cx.resources.status_led.set_high().unwrap(),
-            Err(_) => (),
-        };
+        // let mut palantir = cx.resources.palantir;
+        // match palantir.lock(|p| p.discovery_mode()) {
+        //     Ok(_) => cx.resources.status_led.set_high().unwrap(),
+        //     Err(_) => cx.resources.error_led.set_high().unwrap(),
+        // };
         loop {}
     }
 
-    #[task(binds = SERCOM0, resources = [palantir, sercom0, error_led])]
+    #[task(binds = SERCOM0, resources = [palantir, sercom0, status_led])]
     fn sercom0(cx: sercom0::Context) {
         let intflag = cx.resources.sercom0.usart_mut().intflag.read();
+        cx.resources.status_led.set_high().unwrap();
         if intflag.rxc().bit_is_set() {
-            cx.resources.error_led.set_high().unwrap();
             cx.resources.palantir.ingest();
         } else if intflag.error().bit_is_set() {
             // Collision error detected, wait for NAK and resend

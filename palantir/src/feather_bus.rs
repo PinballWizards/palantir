@@ -19,7 +19,7 @@ type Padout = UART0Padout<Sercom0Pad3<Pa11<PfC>>, Sercom0Pad2<Pa10<PfC>>, (), ()
 pub struct UartBus<P: OutputPin> {
     padout: Padout,
     sercom: SERCOM0,
-    receive_enable: P,
+    transmit_enable: P,
 }
 
 impl<P: OutputPin> UartBus<P> {
@@ -29,14 +29,14 @@ impl<P: OutputPin> UartBus<P> {
         sercom: SERCOM0,
         pm: &mut PM,
         padout: T,
-        mut receive_enable: P,
+        mut transmit_enable: P,
     ) -> UartBus<P>
     where
         Padout: RxpoTxpo,
         <P as embedded_hal::digital::v2::OutputPin>::Error: core::fmt::Debug,
     {
         let padout = padout.into();
-        receive_enable.set_high().unwrap();
+        transmit_enable.set_low().unwrap();
 
         pm.apbcmask.modify(|_, w| w.sercom0_().set_bit());
 
@@ -103,7 +103,7 @@ impl<P: OutputPin> UartBus<P> {
         Self {
             padout,
             sercom,
-            receive_enable,
+            transmit_enable,
         }
     }
 
@@ -114,7 +114,7 @@ impl<P: OutputPin> UartBus<P> {
         rx: Pa11<Input<Floating>>,
         tx: Pa10<Input<Floating>>,
         port: &mut Port,
-        receive_enable: P,
+        transmit_enable: P,
     ) -> UartBus<P>
     where
         <P as embedded_hal::digital::v2::OutputPin>::Error: core::fmt::Debug,
@@ -122,11 +122,11 @@ impl<P: OutputPin> UartBus<P> {
         let gclk0 = clocks.gclk0();
         UartBus::new(
             &clocks.sercom0_core(&gclk0).unwrap(),
-            1.mhz(),
+            9600.hz(),
             sercom0,
             pm,
             (rx.into_pad(port), tx.into_pad(port)),
-            receive_enable,
+            transmit_enable,
         )
     }
 
@@ -199,11 +199,11 @@ where
     type Error = ();
     // Ignore all sorts of errors for now kthx.
     fn send(&mut self, data: &[u16]) {
-        self.receive_enable.set_low().unwrap();
+        self.transmit_enable.set_high().unwrap();
         for word in data.iter() {
             let _ = self.bwrite_all(&word.to_le_bytes());
         }
-        self.receive_enable.set_high().unwrap()
+        self.transmit_enable.set_low().unwrap()
     }
     fn read(&mut self) -> nb::Result<u16, Self::Error> {
         let mut buf = [0u8; 2];

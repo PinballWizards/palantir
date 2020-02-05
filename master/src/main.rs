@@ -49,7 +49,8 @@ const APP: () = {
             w.error().set_bit()
         });
 
-        let receive_enable = pins.a4.into_push_pull_output(&mut pins.port);
+        let mut transmit_enable = pins.a4.into_push_pull_output(&mut pins.port);
+        transmit_enable.set_low().unwrap();
 
         let uart = UartBus::easy_new(
             &mut clocks,
@@ -58,7 +59,7 @@ const APP: () = {
             pins.d0,
             pins.d1,
             &mut pins.port,
-            receive_enable,
+            transmit_enable,
         );
 
         let mut slaves: SlaveAddresses = SlaveAddresses::new();
@@ -77,7 +78,7 @@ const APP: () = {
     fn idle(cx: idle::Context) -> ! {
         let mut palantir = cx.resources.palantir;
         // Give a wee bit o' time to let slaves boot and enter discovery mode.
-        // cx.resources.delay.delay_ms(1000u32);
+        cx.resources.delay.delay_ms(1000u32);
         match palantir.lock(|p| p.discover_devices()) {
             Ok(_) => cx.resources.status_led.set_high().unwrap(),
             _ => cx.resources.error_led.set_high().unwrap(),
