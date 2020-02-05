@@ -4,3 +4,8 @@ members = [
     "master",
     "slave",
 ]
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+lto = true

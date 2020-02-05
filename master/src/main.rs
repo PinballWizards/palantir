@@ -8,25 +8,32 @@ use rtfm;
 
 use hal::{
     clock::GenericClockController,
-    gpio::{Output, Pa5, PushPull},
+    delay::Delay,
+    gpio::{Output, Pa17, Pa5, Pb8, PushPull},
     pac::Peripherals,
+    prelude::*,
 };
 use palantir::{feather_bus as bus, Palantir, SlaveAddresses};
 
 use bus::UartBus;
 
-const SLAVES: [u8; 1] = [0x1];
+const SLAVES: [u8; 1] = [0x2];
 
 type ReceiveEnablePin = Pa5<Output<PushPull>>;
+type StatusLEDPin = Pa17<Output<PushPull>>;
+type ErrorLEDPin = Pb8<Output<PushPull>>;
 
 #[rtfm::app(device = hal::pac)]
 const APP: () = {
     struct Resources {
         palantir: Palantir<UartBus<ReceiveEnablePin>>,
         sercom0: hal::pac::SERCOM0,
+        status_led: StatusLEDPin,
+        error_led: ErrorLEDPin,
+        delay: Delay,
     }
     #[init]
-    fn init(_: init::Context) -> init::LateResources {
+    fn init(cx: init::Context) -> init::LateResources {
         let mut peripherals = Peripherals::take().unwrap();
         let mut clocks = GenericClockController::with_external_32kosc(
             peripherals.GCLK,
@@ -60,15 +67,21 @@ const APP: () = {
         init::LateResources {
             palantir: Palantir::new_master(slaves, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
+            status_led: pins.d13.into_push_pull_output(&mut pins.port),
+            error_led: pins.a1.into_push_pull_output(&mut pins.port),
+            delay: Delay::new(cx.core.SYST, &mut clocks),
         }
     }
 
-    #[idle(resources = [palantir])]
+    #[idle(resources = [palantir, status_led, error_led, delay])]
     fn idle(cx: idle::Context) -> ! {
         let mut palantir = cx.resources.palantir;
-        palantir.lock(|p| {
-            let _ = p.discover_devices();
-        });
+        // Give a wee bit o' time to let slaves boot and enter discovery mode.
+        // cx.resources.delay.delay_ms(1000u32);
+        match palantir.lock(|p| p.discover_devices()) {
+            Ok(_) => cx.resources.status_led.set_high().unwrap(),
+            _ => cx.resources.error_led.set_high().unwrap(),
+        };
         loop {}
     }
 

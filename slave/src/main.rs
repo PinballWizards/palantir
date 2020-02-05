@@ -8,8 +8,9 @@ use rtfm;
 
 use hal::{
     clock::GenericClockController,
-    gpio::{Output, Pa5, PushPull},
+    gpio::{Output, Pa16, Pa17, Pa5, PushPull},
     pac::Peripherals,
+    prelude::*,
 };
 use palantir::{feather_bus as bus, Palantir};
 
@@ -18,12 +19,16 @@ use bus::UartBus;
 const DEVICE_ADDRESS: u8 = 0x2;
 
 type ReceiveEnablePin = Pa5<Output<PushPull>>;
+type StatusLEDPin = Pa17<Output<PushPull>>;
+type ErrorLEDPin = Pa16<Output<PushPull>>;
 
 #[rtfm::app(device = hal::pac)]
 const APP: () = {
     struct Resources {
         palantir: Palantir<UartBus<ReceiveEnablePin>>,
         sercom0: hal::pac::SERCOM0,
+        error_led: ErrorLEDPin,
+        status_led: StatusLEDPin,
     }
     #[init]
     fn init(_: init::Context) -> init::LateResources {
@@ -37,7 +42,7 @@ const APP: () = {
         let mut pins = hal::Pins::new(peripherals.PORT);
 
         // Enable sercom0 receive complete interrupt and error interrupt
-        peripherals.SERCOM0.usart_mut().intenset.write(|w| {
+        peripherals.SERCOM0.usart().intenset.write(|w| {
             w.rxc().set_bit();
             w.error().set_bit()
         });
@@ -57,22 +62,26 @@ const APP: () = {
         init::LateResources {
             palantir: Palantir::new_slave(DEVICE_ADDRESS, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
+            status_led: pins.d13.into_push_pull_output(&mut pins.port),
+            error_led: pins.d11.into_push_pull_output(&mut pins.port),
         }
     }
 
-    #[idle(resources = [palantir])]
+    #[idle(resources = [palantir, status_led])]
     fn idle(cx: idle::Context) -> ! {
         let mut palantir = cx.resources.palantir;
-        palantir.lock(|p| {
-            let _ = p.discovery_mode();
-        });
+        match palantir.lock(|p| p.discovery_mode()) {
+            Ok(_) => cx.resources.status_led.set_high().unwrap(),
+            Err(_) => (),
+        };
         loop {}
     }
 
-    #[task(binds = SERCOM0, resources = [palantir, sercom0])]
+    #[task(binds = SERCOM0, resources = [palantir, sercom0, error_led])]
     fn sercom0(cx: sercom0::Context) {
         let intflag = cx.resources.sercom0.usart_mut().intflag.read();
         if intflag.rxc().bit_is_set() {
+            cx.resources.error_led.set_high().unwrap();
             cx.resources.palantir.ingest();
         } else if intflag.error().bit_is_set() {
             // Collision error detected, wait for NAK and resend
