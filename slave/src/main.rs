@@ -13,7 +13,11 @@ use hal::{
     pac::Peripherals,
     prelude::*,
 };
-use palantir::{feather_bus as bus, Palantir};
+use palantir::{
+    feather_bus as bus,
+    messages::{DiscoveryAck, DiscoveryRequest, ReceivedMessage},
+    Palantir,
+};
 
 use bus::UartBus;
 
@@ -69,25 +73,33 @@ const APP: () = {
         }
     }
 
-    #[idle(resources = [palantir, delay, sercom0, status_led])]
+    #[idle(resources = [palantir, delay, sercom0, status_led, error_led])]
     fn idle(cx: idle::Context) -> ! {
         let mut palantir = cx.resources.palantir;
-        // match palantir.lock(|p| p.discovery_mode()) {
-        //     Ok(_) => cx.resources.status_led.set_high().unwrap(),
-        //     Err(_) => cx.resources.error_led.set_high().unwrap(),
-        // };
+        match palantir.lock(|p| p.discovery_mode()) {
+            Ok(_) => cx.resources.status_led.set_high().unwrap(),
+            Err(_) => cx.resources.error_led.set_high().unwrap(),
+        };
 
-        loop {
+        let msg = loop {
             match palantir.lock(|p| p.poll()) {
                 Some(msg) => {
-                    cx.resources.status_led.set_high().unwrap();
-                    break;
+                    break msg;
                 }
                 None => (),
             }
-        }
+        };
 
-        cx.resources.delay.delay_ms(1000u32);
+        match msg {
+            ReceivedMessage::DiscoveryRequest(addr, _) => {
+                cx.resources.status_led.set_high().unwrap();
+                match palantir.lock(|p| p.send(addr, DiscoveryAck)) {
+                    Ok(_) => (),
+                    Err(_) => cx.resources.error_led.set_high().unwrap(),
+                }
+            }
+            _ => (),
+        }
 
         let mut sercom0 = cx.resources.sercom0;
         loop {}
@@ -101,17 +113,18 @@ const APP: () = {
         //        }
     }
 
-    #[task(binds = SERCOM0, resources = [palantir, sercom0, error_led])]
+    #[task(binds = SERCOM0, resources = [palantir, sercom0])]
     fn sercom0(cx: sercom0::Context) {
         let intflag = cx.resources.sercom0.usart_mut().intflag.read();
         if intflag.rxc().bit_is_set() {
-            match cx.resources.palantir.ingest() {
-                Some(msg) => match msg {
-                    palantir::RESPONSE_NACK => cx.resources.error_led.set_high().unwrap(),
-                    _ => (),
-                },
-                None => (),
-            };
+            cx.resources.palantir.ingest();
+        //            match cx.resources.palantir.ingest() {
+        //                Some(msg) => match msg {
+        //                    palantir::RESPONSE_NACK => cx.resources.error_led.set_high().unwrap(),
+        //                    _ => (),
+        //                },
+        //                None => (),
+        //            };
         } else if intflag.error().bit_is_set() {
             // Collision error detected, wait for NAK and resend
             cx.resources
