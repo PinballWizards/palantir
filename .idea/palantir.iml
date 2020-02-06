@@ -14,9 +14,21 @@
       <sourceFolder url="file://$MODULE_DIR$/master/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/master/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/master/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/master\examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/master\tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/master\benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/palantir\examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/palantir\tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/palantir\benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/slave\examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/slave\tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/slave\benches" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/master/target" />
+      <excludeFolder url="file://$MODULE_DIR$/master\target" />
       <excludeFolder url="file://$MODULE_DIR$/palantir/target" />
+      <excludeFolder url="file://$MODULE_DIR$/palantir\target" />
       <excludeFolder url="file://$MODULE_DIR$/slave/target" />
+      <excludeFolder url="file://$MODULE_DIR$/slave\target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
