@@ -13,6 +13,8 @@ mod transport;
 use messages::*;
 use transport::{Address, Response, Transport, MASTER_ADDRESS};
 
+pub use transport::RESPONSE_NACK;
+
 use core::convert::TryFrom;
 use heapless::{consts::*, Vec};
 use nb;
@@ -104,7 +106,7 @@ impl<B: Bus> Palantir<B> {
     /// This should only be called by the master device at startup!
     pub fn discover_devices(&mut self) -> Result<(), Error> {
         for address in self.slaves.clone().iter() {
-            self.send(*address, DiscoveryAck)?;
+            self.send(*address, DiscoveryRequest)?;
             self.wait_for_discovery_ack(*address)?;
         }
         Ok(())

@@ -120,11 +120,11 @@ impl Transport {
     }
 
     fn address_match(&self, address: Address) -> bool {
-        (self.address ^ address == 0) || (BROADCAST_ADDRESS ^ address == 0)
+        (address == self.address) || (address == BROADCAST_ADDRESS)
     }
 
     fn parse_address(&self, byte: u16) -> Address {
-        ((byte & 0x00_ff) >> 4) as Address
+        ((byte & 0xff) >> 4) as Address
     }
 
     /// This is a minimal ingester for data straight from SERCOM and should be called as soon

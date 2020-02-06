@@ -147,16 +147,18 @@ impl<P: OutputPin> UartBus<P> {
     }
 }
 
-impl<P: OutputPin> serial::Write<u8> for UartBus<P> {
+type Word = u16;
+
+impl<P: OutputPin> serial::Write<Word> for UartBus<P> {
     type Error = ();
 
-    fn write(&mut self, word: u8) -> nb::Result<(), Self::Error> {
+    fn write(&mut self, word: Word) -> nb::Result<(), Self::Error> {
         unsafe {
             if !self.dre() {
                 return Err(nb::Error::WouldBlock);
             }
 
-            self.sercom.usart().data.write(|w| w.bits(word as u16));
+            self.sercom.usart().data.write(|w| w.bits(word));
         }
 
         Ok(())
@@ -172,10 +174,10 @@ impl<P: OutputPin> serial::Write<u8> for UartBus<P> {
     }
 }
 
-impl<P: OutputPin> serial::Read<u8> for UartBus<P> {
+impl<P: OutputPin> serial::Read<Word> for UartBus<P> {
     type Error = ();
 
-    fn read(&mut self) -> nb::Result<u8, Self::Error> {
+    fn read(&mut self) -> nb::Result<Word, Self::Error> {
         let has_data = self.usart().intflag.read().rxc().bit_is_set();
 
         if !has_data {
@@ -184,17 +186,11 @@ impl<P: OutputPin> serial::Read<u8> for UartBus<P> {
 
         let data = self.usart().data.read().bits();
 
-        Ok(data as u8)
+        Ok(data)
     }
 }
 
-impl<P: OutputPin> Default<u8> for UartBus<P> {}
-
-impl<P: OutputPin> core::fmt::Write for UartBus<P> {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        self.bwrite_all(s.as_bytes()).map_err(|_| core::fmt::Error)
-    }
-}
+impl<P: OutputPin> Default<Word> for UartBus<P> {}
 
 impl<P: OutputPin> Bus for UartBus<P>
 where
@@ -202,22 +198,15 @@ where
 {
     type Error = ();
     // Ignore all sorts of errors for now kthx.
-    fn send(&mut self, data: &[u16]) {
+    fn send(&mut self, data: &[Word]) {
         self.transmit_enable.set_high().unwrap();
-        for word in data.iter() {
-            let _ = self.bwrite_all(&word.to_le_bytes());
+        for byte in data.iter() {
+            let _ = nb::block!(self.write(*byte));
         }
         self.transmit_enable.set_low().unwrap()
     }
-    fn read(&mut self) -> nb::Result<u16, Self::Error> {
-        let mut buf = [0u8; 2];
-        for v in buf.iter_mut() {
-            match <UartBus<P> as serial::Read<u8>>::read(self) {
-                Ok(data) => *v = data,
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(u16::from_le_bytes(buf))
+    fn read(&mut self) -> nb::Result<Word, Self::Error> {
+        <UartBus<P> as serial::Read<Word>>::read(self)
     }
 }
 
