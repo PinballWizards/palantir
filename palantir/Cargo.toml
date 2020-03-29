@@ -16,9 +16,6 @@ version = "~0.2"
 optional = true
 
 [dependencies]
-bitfield = "~0.13"
-heapless = "~0.5.2"
-nom = { version = "~5.1", default-features = false }
 crc = { version = "~1.8.1", default-features = false }
 nb = "~0.1"
 

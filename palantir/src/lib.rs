@@ -1,26 +1,16 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[macro_use]
-extern crate bitfield;
+mod common;
+pub use common::*;
 
 #[cfg(feature = "feather_bus")]
 pub mod feather_bus;
 pub mod messages;
-
 mod parser;
-mod transport;
 
 use messages::*;
-use transport::{Address, Response, Transport, MASTER_ADDRESS};
-
-pub use transport::RESPONSE_NACK;
-
-use core::convert::TryFrom;
-use heapless::{consts::*, Vec};
 use nb;
-use nom::number::complete::le_u8;
-
-pub type SlaveAddresses = Vec<Address, U7>;
+use parser::Parser;
 
 pub trait Bus {
     type Error;
@@ -39,75 +29,46 @@ pub enum Error {
 }
 
 pub struct Palantir<B: Bus> {
-    transport: Transport,
+    parser: Parser,
     address: Address,
     bus: B,
-    slaves: SlaveAddresses,
+    slaves: Option<SlaveAddresses>,
     loopback: bool,
 }
 
 impl<B: Bus> Palantir<B> {
     pub fn new_slave(device_address: Address, bus: B) -> Self {
         Palantir {
-            transport: Transport::new_slave(device_address),
+            parser: Parser::new(device_address),
             address: device_address,
-            bus: bus,
-            slaves: Vec::new(),
+            bus,
+            slaves: None,
             loopback: false,
         }
     }
 
     pub fn new_master(slaves: SlaveAddresses, bus: B) -> Self {
         Palantir {
-            transport: Transport::new_master(),
+            parser: Parser::new(MASTER_ADDRESS),
             address: MASTER_ADDRESS,
-            bus: bus,
-            slaves: slaves,
+            bus,
+            slaves: Some(slaves),
             loopback: false,
         }
     }
 
     fn wait_for_discovery_ack(&mut self, address: Address) -> Result<(), Error> {
-        let msg = loop {
-            self.ingest();
-            match self.poll() {
-                Some(m) => break m,
-                _ => (),
-            }
-        };
-
-        match msg {
-            ReceivedMessage::DiscoveryAck(addr, _) => {
-                if addr == address {
-                    Ok(())
-                } else {
-                    Err(Error::InvalidDiscoveryAck)
-                }
-            }
-            _ => Err(Error::InvalidDiscoveryAck),
-        }
+        Ok(())
     }
 
     fn wait_for_discovery_request(&mut self) -> Result<(), Error> {
-        let msg = loop {
-            self.ingest();
-            match self.poll() {
-                Some(m) => break m,
-                _ => (),
-            }
-        };
-
-        match msg {
-            ReceivedMessage::DiscoveryRequest(_, _) => self.send(MASTER_ADDRESS, DiscoveryAck),
-            _ => Err(Error::InvalidDiscoveryReq),
-        }
+        Ok(())
     }
 
     /// This should only be called by the master device at startup!
     pub fn discover_devices(&mut self) -> Result<(), Error> {
-        for address in self.slaves.clone().iter() {
-            self.send(*address, DiscoveryRequest)?;
-            self.wait_for_discovery_ack(*address)?;
+        for slave in self.slaves.unwrap() {
+            self.wait_for_discovery_ack(slave);
         }
         Ok(())
     }
@@ -117,7 +78,7 @@ impl<B: Bus> Palantir<B> {
         self.wait_for_discovery_request()
     }
 
-    pub fn send<M: Message>(&mut self, address: Address, message: M) -> Result<(), Error> {
+    pub fn send(&mut self, address: Address, message: Message) -> Result<(), Error> {
         if !self.loopback && address == self.address {
             return Err(Error::SendToSelf);
         }
@@ -133,49 +94,16 @@ impl<B: Bus> Palantir<B> {
         Ok(())
     }
 
-    pub fn poll(&mut self) -> Option<ReceivedMessage> {
-        let frame = self.transport.parse_data_buffer()?;
-
-        let (i, msg_id) = match le_u8::<()>(frame.app_data()) {
-            Ok(v) => v,
-            Err(_) => return None,
-        };
-
-        let id = match MessageID::try_from(msg_id) {
-            Ok(id) => id,
+    pub fn poll(&mut self) -> Option<Message> {
+        let data = match self.bus.read() {
+            Ok(val) => val,
             _ => return None,
         };
-
-        match id {
-            MessageID::Broadcast => match Broadcast::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::Broadcast(frame.address(), msg)),
-                _ => None,
-            },
-            MessageID::DiscoveryRequest => match DiscoveryRequest::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::DiscoveryRequest(frame.address(), msg)),
-                _ => None,
-            },
-            MessageID::DiscoveryAck => match DiscoveryAck::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::DiscoveryAck(frame.address(), msg)),
-                _ => None,
-            },
-            MessageID::UpdateRequest => match UpdateRequest::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::UpdateRequest(frame.address(), msg)),
-                _ => None,
-            },
-            MessageID::SolenoidUpdate => match SolenoidUpdate::try_from(i) {
-                Ok(msg) => Some(ReceivedMessage::SolenoidUpdate(frame.address(), msg)),
-                _ => None,
-            },
-        }
+        self.parser.ingest(data);
+        self.parser.poll_message()
     }
 
-    pub fn ingest(&mut self) -> Option<Response> {
-        match self.bus.read() {
-            Ok(v) => self.transport.ingest(v),
-            _ => None,
-        }
-    }
+    pub fn ingest(&mut self) {}
 }
 
 #[cfg(test)]
@@ -186,10 +114,10 @@ mod tests {
     impl<B: Bus> Palantir<B> {
         fn new_loopback(address: Address, bus: B) -> Self {
             Palantir {
-                transport: Transport::new_slave(address),
+                parser: Parser::new(address),
                 address,
                 bus,
-                slaves: Vec::new(),
+                slaves: None,
                 loopback: true,
             }
         }
@@ -236,27 +164,5 @@ mod tests {
     }
 
     #[test]
-    fn discovery_ack_transmit() {
-        let msg = DiscoveryRequest;
-        let slave_addr: Address = 0x2;
-        let mut palantir = get_mocked_slave(slave_addr);
-
-        palantir.send(slave_addr, msg);
-
-        for _ in 0..260 {
-            palantir.ingest();
-        }
-
-        let recv_msg = match palantir.poll() {
-            Some(msg) => msg,
-            None => panic!("did not get sent message"),
-        };
-
-        match recv_msg {
-            ReceivedMessage::DiscoveryRequest(addr, _) => {
-                println!("got discovery request from addr: {}", addr)
-            }
-            _ => panic!("did not get discovery request"),
-        };
-    }
+    fn discovery_ack_transmit() {}
 }
