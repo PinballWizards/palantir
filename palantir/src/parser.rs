@@ -10,11 +10,9 @@ enum ReceiverState {
     Error,
 }
 
-type ReceiverError = ();
-
 struct Receiver {
     state: ReceiverState,
-    buffer: [u8; 64],
+    buffer: [u8; MAX_DATA_LEN],
     data_length: u8,
     received: u8,
 }
@@ -23,14 +21,17 @@ impl Receiver {
     pub fn new() -> Self {
         Receiver {
             state: ReceiverState::Idle,
-            buffer: [0; MAX_MESSAGE_LEN],
+            buffer: [0; MAX_DATA_LEN],
             data_length: 0,
             received: 0,
         }
     }
 
     pub fn is_complete(&self) -> bool {
-        self.state == ReceiverState::Completed
+        match self.state {
+            ReceiverState::Completed => true,
+            _ => false,
+        }
     }
 
     fn reset(&mut self) {
@@ -44,23 +45,23 @@ impl Receiver {
         self.state = ReceiverState::Receiving;
     }
 
-    pub fn add_to_buffer(&mut self, data: u8) -> Result<(), ReceiverError> {
+    pub fn add_to_buffer(&mut self, data: u8) -> Result<(), ()> {
         match self.state {
             ReceiverState::Receiving => {
                 if self.data_length == 0 {
                     if data as usize > MAX_MESSAGE_LEN {
-                        return Err(ReceiverError);
+                        return Err(());
                     }
                     self.data_length = data;
                 } else if self.received < self.data_length {
-                    self.buffer[self.received] = data;
+                    self.buffer[self.received as usize] = data;
                     self.received += 1;
                 } else {
-                    return Err(ReceiverError);
+                    return Err(());
                 }
             }
             ReceiverState::Idle | ReceiverState::Completed | ReceiverState::Error => {
-                return Err(ReceiverError);
+                return Err(());
             }
         };
 
@@ -72,7 +73,7 @@ impl Receiver {
     }
 
     pub fn data(&self) -> &[u8] {
-        self.buffer[..self.length]
+        &self.buffer[..self.data_length as usize]
     }
 }
 
@@ -91,9 +92,9 @@ impl Parser {
         }
     }
 
-    fn is_address_byte(address_data: u16) -> Option<Address> {
-        if address_data & (1 << 8) == 1 {
-            Some(address_data as Address)
+    fn is_address_byte(&self, address_data: u16) -> Option<Address> {
+        if address_data & (1 << 8) != 0 {
+            return Some(address_data as Address);
         }
         None
     }
@@ -103,7 +104,7 @@ impl Parser {
         if address.is_some() && address.unwrap() == self.address {
             self.receiver.start();
         } else {
-            self.receiver.add_to_buffer(data as u8);
+            let _ = self.receiver.add_to_buffer(data as u8);
         }
 
         if self.receiver.is_complete() {

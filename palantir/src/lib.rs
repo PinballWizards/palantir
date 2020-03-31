@@ -58,7 +58,19 @@ impl<B: Bus> Palantir<B> {
     }
 
     fn wait_for_discovery_ack(&mut self, address: Address) -> Result<(), Error> {
-        Ok(())
+        let msg: Message = loop {
+            match self.poll() {
+                Some(msg) => break msg,
+                None => continue,
+            }
+        };
+
+        let _valid_data = DiscoveryAcknowledgeData::new(address);
+
+        match msg {
+            Message::DiscoveryAcknowledge(_valid_data) => Ok(()),
+            _ => Err(Error::InvalidDiscoveryAck),
+        }
     }
 
     fn wait_for_discovery_request(&mut self) -> Result<(), Error> {
@@ -67,8 +79,13 @@ impl<B: Bus> Palantir<B> {
 
     /// This should only be called by the master device at startup!
     pub fn discover_devices(&mut self) -> Result<(), Error> {
-        for slave in self.slaves.unwrap() {
-            self.wait_for_discovery_ack(slave);
+        for slave in self.slaves.unwrap().iter() {
+            let message = Message::DiscoveryRequest(DiscoveryRequestData::new(*slave));
+            match self.send(*slave, &message) {
+                Err(_) => return Err(Error::Other),
+                _ => (),
+            };
+            self.wait_for_discovery_ack(*slave)?;
         }
         Ok(())
     }
@@ -78,19 +95,34 @@ impl<B: Bus> Palantir<B> {
         self.wait_for_discovery_request()
     }
 
-    pub fn send(&mut self, address: Address, message: Message) -> Result<(), Error> {
+    pub fn send(&mut self, address: Address, message: &Message) -> Result<(), Error> {
         if !self.loopback && address == self.address {
             return Err(Error::SendToSelf);
         }
 
-        let payload = match message.to_payload() {
-            Ok(v) => v,
-            Err(_) => return Err(Error::Other),
-        };
-        self.bus.send(&match self.transport.send(address, payload) {
-            Ok(data) => data,
+        let mut data = [0u8; MAX_DATA_LEN];
+        let data_len = match messages::data_from_message(message, &mut data) {
+            Ok(len) => len,
             _ => return Err(Error::Other),
-        });
+        };
+        let mut payload = [0u16; MAX_MESSAGE_LEN];
+        payload[0] = (1 << 8) | address as u16;
+        payload[1] = data_len as u16;
+        for (place, data) in payload[2..].iter_mut().zip(data.iter()) {
+            *place = *data as u16;
+        }
+
+        // +2 here for the address and data length bytes
+        self.bus.send(payload.split_at(2 + data_len).0);
+
+        // let payload = match message.to_payload() {
+        //     Ok(v) => v,
+        //     Err(_) => return Err(Error::Other),
+        // };
+        // self.bus.send(&match self.transport.send(address, payload) {
+        //     Ok(data) => data,
+        //     _ => return Err(Error::Other),
+        // });
         Ok(())
     }
 
@@ -109,7 +141,7 @@ impl<B: Bus> Palantir<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use heapless::spsc::Queue;
+    use std::collections::VecDeque;
 
     impl<B: Bus> Palantir<B> {
         fn new_loopback(address: Address, bus: B) -> Self {
@@ -124,26 +156,28 @@ mod tests {
     }
 
     struct MockBus {
-        buf: Queue<u16, U260>,
+        buf: VecDeque<u16>,
     }
 
     impl MockBus {
         fn new() -> Self {
-            Self { buf: Queue::new() }
+            Self {
+                buf: VecDeque::new(),
+            }
         }
     }
 
     impl Bus for MockBus {
         type Error = ();
         fn send(&mut self, data: &[u16]) {
-            for byte in data.iter() {
-                let _ = self.buf.enqueue(*byte);
+            for x in data {
+                self.buf.push_back(*x);
             }
         }
 
         fn read(&mut self) -> nb::Result<u16, Self::Error> {
-            match self.buf.dequeue() {
-                Some(v) => Ok(v),
+            match self.buf.pop_front() {
+                Some(val) => Ok(val),
                 None => Err(nb::Error::Other(())),
             }
         }
@@ -164,5 +198,25 @@ mod tests {
     }
 
     #[test]
-    fn discovery_ack_transmit() {}
+    fn discovery_req_transmit() {
+        let mut bus = MockBus::new();
+        let mut palantir = Palantir::new_loopback(MASTER_ADDRESS, bus);
+
+        let msg = Message::DiscoveryRequest(DiscoveryRequestData::new(9));
+
+        palantir.send(MASTER_ADDRESS, &msg);
+
+        let mut msg: Option<Message> = None;
+
+        for _ in 0..MAX_MESSAGE_LEN {
+            msg = palantir.poll();
+            if msg.is_some() {
+                break;
+            }
+        }
+        match msg {
+            Some(Message::DiscoveryRequest(data)) => assert_eq!(data.target_address(), 9),
+            _ => panic!("got something that wasnt a discovery request"),
+        }
+    }
 }
