@@ -8,7 +8,7 @@ pub mod feather_bus;
 pub mod messages;
 mod parser;
 
-use messages::*;
+pub use messages::*;
 use nb;
 use parser::Parser;
 
@@ -73,13 +73,13 @@ impl<B: Bus> Palantir<B> {
         }
     }
 
-    fn wait_for_discovery_request(&mut self) -> Result<(), Error> {
-        Ok(())
-    }
-
     /// This should only be called by the master device at startup!
     pub fn discover_devices(&mut self) -> Result<(), Error> {
         for slave in self.slaves.unwrap().iter() {
+            if *slave == 0 {
+                continue;
+            }
+
             let message = Message::DiscoveryRequest(DiscoveryRequestData::new(*slave));
             match self.send(*slave, &message) {
                 Err(_) => return Err(Error::Other),
@@ -92,7 +92,20 @@ impl<B: Bus> Palantir<B> {
 
     /// This should be called only by slave devices at startup.
     pub fn discovery_mode(&mut self) -> Result<(), Error> {
-        self.wait_for_discovery_request()
+        let msg = loop {
+            match self.poll() {
+                Some(msg) => break msg,
+                _ => (),
+            }
+        };
+
+        match msg {
+            Message::DiscoveryRequest(_) => self.send(
+                MASTER_ADDRESS,
+                &Message::DiscoveryAcknowledge(DiscoveryAcknowledgeData::new(self.address)),
+            ),
+            _ => Err(Error::InvalidDiscoveryReq),
+        }
     }
 
     pub fn send(&mut self, address: Address, message: &Message) -> Result<(), Error> {
@@ -114,15 +127,6 @@ impl<B: Bus> Palantir<B> {
 
         // +2 here for the address and data length bytes
         self.bus.send(payload.split_at(2 + data_len).0);
-
-        // let payload = match message.to_payload() {
-        //     Ok(v) => v,
-        //     Err(_) => return Err(Error::Other),
-        // };
-        // self.bus.send(&match self.transport.send(address, payload) {
-        //     Ok(data) => data,
-        //     _ => return Err(Error::Other),
-        // });
         Ok(())
     }
 
@@ -134,8 +138,6 @@ impl<B: Bus> Palantir<B> {
         self.parser.ingest(data);
         self.parser.poll_message()
     }
-
-    pub fn ingest(&mut self) {}
 }
 
 #[cfg(test)]

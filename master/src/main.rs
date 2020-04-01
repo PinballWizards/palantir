@@ -13,11 +13,11 @@ use hal::{
     pac::Peripherals,
     prelude::*,
 };
-use palantir::{feather_bus as bus, Palantir, SlaveAddresses};
+use palantir::{self, feather_bus as bus, Palantir, SlaveAddresses};
 
 use bus::UartBus;
 
-const SLAVES: [u8; 1] = [0x2];
+const SLAVES: SlaveAddresses = [2, 0, 0, 0, 0, 0, 0];
 
 type ReceiveEnablePin = Pa5<Output<PushPull>>;
 type StatusLEDPin = Pa17<Output<PushPull>>;
@@ -62,11 +62,8 @@ const APP: () = {
             transmit_enable,
         );
 
-        let mut slaves: SlaveAddresses = SlaveAddresses::new();
-        slaves.extend_from_slice(&SLAVES).unwrap();
-
         init::LateResources {
-            palantir: Palantir::new_master(slaves, uart),
+            palantir: Palantir::new_master(SLAVES, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
             status_led: pins.d13.into_push_pull_output(&mut pins.port),
             error_led: pins.a1.into_push_pull_output(&mut pins.port),
@@ -86,11 +83,19 @@ const APP: () = {
         loop {}
     }
 
-    #[task(binds = SERCOM0, resources = [palantir, sercom0])]
+    #[task]
+    fn message_handler(cx: message_handler::Context, message: palantir::Message) {}
+
+    #[task(binds = SERCOM0, resources = [palantir, sercom0], spawn = [message_handler])]
     fn sercom0(cx: sercom0::Context) {
         let intflag = cx.resources.sercom0.usart_mut().intflag.read();
         if intflag.rxc().bit_is_set() {
-            cx.resources.palantir.ingest();
+            match cx.resources.palantir.poll() {
+                Some(msg) => {
+                    cx.spawn.message_handler(msg);
+                }
+                _ => (),
+            };
         } else if intflag.error().bit_is_set() {
             // Collision error detected, wait for NAK and resend
             cx.resources

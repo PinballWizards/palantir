@@ -92,6 +92,7 @@ impl Parser {
         }
     }
 
+    #[inline(always)]
     fn is_address_byte(&self, address_data: u16) -> Option<Address> {
         if address_data & (1 << 8) != 0 {
             return Some(address_data as Address);
@@ -100,12 +101,14 @@ impl Parser {
     }
 
     pub fn ingest(&mut self, data: u16) {
-        let address = self.is_address_byte(data);
-        if address.is_some() && address.unwrap() == self.address {
-            self.receiver.start();
-        } else {
-            let _ = self.receiver.add_to_buffer(data as u8);
-        }
+        match self.is_address_byte(data) {
+            Some(address) if address == self.address => {
+                self.receiver.start();
+                return;
+            }
+            Some(_) => (),
+            None => return,
+        };
 
         if self.receiver.is_complete() {
             match message_from_data(self.receiver.data()) {
