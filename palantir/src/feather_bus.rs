@@ -1,7 +1,6 @@
-use embedded_hal::{
-    blocking::serial::{write::Default, Write},
-    serial,
-};
+use crate::Bus;
+use embedded_hal::{blocking::serial::write::Default, digital::v2::OutputPin, serial};
+use feather_m0 as hal;
 use hal::{
     clock::{GenericClockController, Sercom0CoreClock},
     gpio::{Floating, Input, Pa10, Pa11, PfC, Port},
@@ -10,27 +9,30 @@ use hal::{
     sercom::{PadPin, RxpoTxpo, Sercom0Pad2, Sercom0Pad3, UART0Padout},
     time::Hertz,
 };
-use palantir::Bus;
 
 type Padout = UART0Padout<Sercom0Pad3<Pa11<PfC>>, Sercom0Pad2<Pa10<PfC>>, (), ()>;
 
-pub struct UartBus {
+pub struct UartBus<P: OutputPin> {
     padout: Padout,
     sercom: SERCOM0,
+    transmit_enable: P,
 }
 
-impl UartBus {
+impl<P: OutputPin> UartBus<P> {
     pub fn new<F: Into<Hertz>, T: Into<Padout>>(
         clock: &Sercom0CoreClock,
         freq: F,
         sercom: SERCOM0,
         pm: &mut PM,
         padout: T,
-    ) -> UartBus
+        mut transmit_enable: P,
+    ) -> UartBus<P>
     where
         Padout: RxpoTxpo,
+        <P as embedded_hal::digital::v2::OutputPin>::Error: core::fmt::Debug,
     {
         let padout = padout.into();
+        transmit_enable.set_low().unwrap();
 
         pm.apbcmask.modify(|_, w| w.sercom0_().set_bit());
 
@@ -94,7 +96,11 @@ impl UartBus {
             while sercom.usart().syncbusy.read().enable().bit_is_set() {}
         }
 
-        Self { padout, sercom }
+        Self {
+            padout,
+            sercom,
+            transmit_enable,
+        }
     }
 
     pub fn easy_new(
@@ -104,14 +110,19 @@ impl UartBus {
         rx: Pa11<Input<Floating>>,
         tx: Pa10<Input<Floating>>,
         port: &mut Port,
-    ) -> UartBus {
+        transmit_enable: P,
+    ) -> UartBus<P>
+    where
+        <P as embedded_hal::digital::v2::OutputPin>::Error: core::fmt::Debug,
+    {
         let gclk0 = clocks.gclk0();
         UartBus::new(
             &clocks.sercom0_core(&gclk0).unwrap(),
-            1.mhz(),
+            9600.hz(),
             sercom0,
             pm,
             (rx.into_pad(port), tx.into_pad(port)),
+            transmit_enable,
         )
     }
 
@@ -126,18 +137,28 @@ impl UartBus {
     fn dre(&self) -> bool {
         self.usart().intflag.read().dre().bit_is_set()
     }
+
+    pub fn enable_rxc_interrupt(&self) {
+        self.usart().intenset.write(|w| w.rxc().set_bit());
+    }
+
+    pub fn enable_error_interrupt(&self) {
+        self.usart().intenset.write(|w| w.error().set_bit());
+    }
 }
 
-impl serial::Write<u8> for UartBus {
+type Word = u16;
+
+impl<P: OutputPin> serial::Write<Word> for UartBus<P> {
     type Error = ();
 
-    fn write(&mut self, word: u8) -> nb::Result<(), Self::Error> {
+    fn write(&mut self, word: Word) -> nb::Result<(), Self::Error> {
         unsafe {
             if !self.dre() {
                 return Err(nb::Error::WouldBlock);
             }
 
-            self.sercom.usart().data.write(|w| w.bits(word as u16));
+            self.sercom.usart().data.write(|w| w.bits(word));
         }
 
         Ok(())
@@ -153,10 +174,10 @@ impl serial::Write<u8> for UartBus {
     }
 }
 
-impl serial::Read<u8> for UartBus {
+impl<P: OutputPin> serial::Read<Word> for UartBus<P> {
     type Error = ();
 
-    fn read(&mut self) -> nb::Result<u8, Self::Error> {
+    fn read(&mut self) -> nb::Result<Word, Self::Error> {
         let has_data = self.usart().intflag.read().rxc().bit_is_set();
 
         if !has_data {
@@ -165,38 +186,31 @@ impl serial::Read<u8> for UartBus {
 
         let data = self.usart().data.read().bits();
 
-        Ok(data as u8)
+        Ok(data)
     }
 }
 
-impl Default<u8> for UartBus {}
+impl<P: OutputPin> Default<Word> for UartBus<P> {}
 
-impl core::fmt::Write for UartBus {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        self.bwrite_all(s.as_bytes()).map_err(|_| core::fmt::Error)
-    }
-}
-
-impl Bus for UartBus {
+impl<P: OutputPin> Bus for UartBus<P>
+where
+    <P as embedded_hal::digital::v2::OutputPin>::Error: core::fmt::Debug,
+{
+    type Error = ();
     // Ignore all sorts of errors for now kthx.
-    fn send(&mut self, data: &[u16]) {
-        for word in data.iter() {
-            let _ = self.bwrite_all(&word.to_le_bytes());
+    fn send(&mut self, data: &[Word]) {
+        self.transmit_enable.set_high().unwrap();
+        for byte in data.iter() {
+            let _ = nb::block!(self.write(*byte));
         }
+        self.transmit_enable.set_low().unwrap()
     }
-    fn read(&mut self) -> u16 {
-        let mut buf = [0u8; 2];
-        for v in buf.iter_mut() {
-            match block!(<UartBus as serial::Read<u8>>::read(self)) {
-                Ok(data) => *v = data,
-                _ => return 0xffff,
-            }
-        }
-        u16::from_le_bytes(buf)
+    fn read(&mut self) -> nb::Result<Word, Self::Error> {
+        <UartBus<P> as serial::Read<Word>>::read(self)
     }
 }
 
-const SHIFT: u8 = 32;
+const SHIFT: u64 = 32;
 
 fn calculate_baud_value(baudrate: u32, clk_freq: u32, n_samples: u8) -> u16 {
     let sample_rate = (n_samples as u64 * baudrate as u64) << 32;

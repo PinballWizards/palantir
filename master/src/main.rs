@@ -1,31 +1,39 @@
 #![no_std]
 #![no_main]
 
-extern crate cortex_m;
-extern crate cortex_m_semihosting;
-extern crate feather_m0 as hal;
 extern crate panic_halt;
-extern crate rtfm;
-#[macro_use]
-extern crate nb;
 
-use hal::{clock::GenericClockController, pac::Peripherals};
-use palantir::Palantir;
+use feather_m0 as hal;
+use rtfm;
 
-mod bus;
+use hal::{
+    clock::GenericClockController,
+    delay::Delay,
+    gpio::{Output, Pa17, Pa5, Pb8, PushPull},
+    pac::Peripherals,
+    prelude::*,
+};
+use palantir::{self, feather_bus as bus, Palantir, SlaveAddresses};
 
 use bus::UartBus;
 
-const DEVICE_ADDRESS: u8 = 0x1;
+const SLAVES: SlaveAddresses = [2, 0, 0, 0, 0, 0, 0];
+
+type ReceiveEnablePin = Pa5<Output<PushPull>>;
+type StatusLEDPin = Pa17<Output<PushPull>>;
+type ErrorLEDPin = Pb8<Output<PushPull>>;
 
 #[rtfm::app(device = hal::pac)]
 const APP: () = {
     struct Resources {
-        palantir: Palantir<UartBus>,
+        palantir: Palantir<UartBus<ReceiveEnablePin>>,
         sercom0: hal::pac::SERCOM0,
+        status_led: StatusLEDPin,
+        error_led: ErrorLEDPin,
+        delay: Delay,
     }
     #[init]
-    fn init(_: init::Context) -> init::LateResources {
+    fn init(cx: init::Context) -> init::LateResources {
         let mut peripherals = Peripherals::take().unwrap();
         let mut clocks = GenericClockController::with_external_32kosc(
             peripherals.GCLK,
@@ -41,6 +49,9 @@ const APP: () = {
             w.error().set_bit()
         });
 
+        let mut transmit_enable = pins.a4.into_push_pull_output(&mut pins.port);
+        transmit_enable.set_low().unwrap();
+
         let uart = UartBus::easy_new(
             &mut clocks,
             peripherals.SERCOM0,
@@ -48,34 +59,43 @@ const APP: () = {
             pins.d0,
             pins.d1,
             &mut pins.port,
+            transmit_enable,
         );
 
         init::LateResources {
-            palantir: Palantir::new(DEVICE_ADDRESS, uart),
+            palantir: Palantir::new_master(SLAVES, uart),
             sercom0: unsafe { Peripherals::steal().SERCOM0 },
+            status_led: pins.d13.into_push_pull_output(&mut pins.port),
+            error_led: pins.a1.into_push_pull_output(&mut pins.port),
+            delay: Delay::new(cx.core.SYST, &mut clocks),
         }
     }
 
-    #[idle(spawn = [testing])]
+    #[idle(resources = [palantir, status_led, error_led, delay])]
     fn idle(cx: idle::Context) -> ! {
-        loop {
-            cx.spawn.testing().unwrap();
-        }
-    }
-
-    #[task(resources = [palantir])]
-    fn testing(cx: testing::Context) {
-        match cx.resources.palantir.poll() {
-            Some(msg) => (),
-            _ => (),
+        let mut palantir = cx.resources.palantir;
+        // Give a wee bit o' time to let slaves boot and enter discovery mode.
+        cx.resources.delay.delay_ms(1000u32);
+        match palantir.lock(|p| p.discover_devices()) {
+            Ok(_) => cx.resources.status_led.set_high().unwrap(),
+            _ => cx.resources.error_led.set_high().unwrap(),
         };
+        loop {}
     }
 
-    #[task(binds = SERCOM0, resources = [palantir, sercom0])]
+    #[task]
+    fn message_handler(cx: message_handler::Context, message: palantir::Message) {}
+
+    #[task(binds = SERCOM0, resources = [palantir, sercom0], spawn = [message_handler])]
     fn sercom0(cx: sercom0::Context) {
         let intflag = cx.resources.sercom0.usart_mut().intflag.read();
         if intflag.rxc().bit_is_set() {
-            cx.resources.palantir.ingest();
+            match cx.resources.palantir.poll() {
+                Some(msg) => {
+                    cx.spawn.message_handler(msg);
+                }
+                _ => (),
+            };
         } else if intflag.error().bit_is_set() {
             // Collision error detected, wait for NAK and resend
             cx.resources

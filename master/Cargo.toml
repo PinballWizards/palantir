@@ -16,9 +16,4 @@ embedded-hal = "~0.2"
 nb = "~0.1"
 feather_m0 = { version = "~0.6", features = ["unproven"] }
 
-palantir = { path = "../palantir" }
-
-[profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
-lto = true
+palantir = { path = "../palantir", features = ["feather_bus"], default-features = false }
